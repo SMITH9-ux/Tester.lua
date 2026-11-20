@@ -1138,7 +1138,7 @@ local function stopAntiAfk()
 end
 
 -- ========================================================
--- TERNAK & TRAKTOR HUB (+ AUTO ISI PAKAN PALUNG 1 & 2)
+-- TERNAK & TRAKTOR HUB (+ AUTO ISI PAKAN PALUNG 1 & 2 DENGAN RADIUS 9999)
 -- ========================================================
 local TernakHub = (function()
     local cb = {
@@ -1544,10 +1544,11 @@ local TernakHub = (function()
     end
 
     -- ========================================================
-    -- AUTO ISI PAKAN TERNAK (Palung_1 & Palung_2)
+    -- AUTO ISI PAKAN TERNAK (RADIUS 9999 STUDS TANPA MENDEKAT)
     -- ========================================================
     local PakanConfig = {
         Interval = 5,
+        Radius = 9999, -- Radius 9999 studs jangkauan jauh tanpa mendekat
         PalungList = {
             { id = 1, name = "Palung_1" },
             { id = 2, name = "Palung_2" }
@@ -1581,16 +1582,48 @@ local TernakHub = (function()
 
     local function detectPalungObject(targetName)
         local lowerTarget = string.lower(targetName)
+        local char = LocalPlayer.Character
+        local hrp = char and char:FindFirstChild("HumanoidRootPart")
+        local playerPos = hrp and hrp.Position or Vector3.zero
+
         for _, obj in ipairs(Workspace:GetDescendants()) do
             local lname = string.lower(obj.Name)
             if lname == lowerTarget or string.find(lname, lowerTarget, 1, true) then
-                return obj
+                local objPos = obj:IsA("BasePart") and obj.Position or (obj:IsA("Model") and obj:GetPivot().Position or nil)
+                if objPos then
+                    local dist = (objPos - playerPos).Magnitude
+                    if dist <= PakanConfig.Radius then
+                        return obj
+                    end
+                else
+                    return obj
+                end
             end
         end
         return nil
     end
 
-    local function isiPakan(palungId)
+    local function bypassPalungPrompt(palungObj)
+        if not palungObj then return end
+        for _, prompt in ipairs(palungObj:GetDescendants()) do
+            if prompt:IsA("ProximityPrompt") then
+                pcall(function()
+                    prompt.RequiresLineOfSight = false
+                    prompt.MaxActivationDistance = 999999
+                    prompt.HoldDuration = 0
+                    if prompt.Enabled then
+                        firePrompt(prompt)
+                    end
+                end)
+            end
+        end
+    end
+
+    local function isiPakan(palungId, palungObj)
+        if palungObj then
+            bypassPalungPrompt(palungObj)
+        end
+
         local rf = getPakanRemote()
         if not rf then
             warn("[IsiPakan]: Remote TernakService.RF.IsiPakan tidak ditemukan")
@@ -1605,7 +1638,7 @@ local TernakHub = (function()
             PakanState.SuccessCount += 1
             local stok = res.stok or res.Stok or "-"
             local maxJml = res.jumlah or res.Jumlah or "-"
-            local nama = res.nama or res.Nama or "Pakan"
+            local nama = res.nama or res.Nama or "Cabai"
             local infoStr = string.format("P%d: %s/%s (%s)", palungId, tostring(stok), tostring(maxJml), tostring(nama))
             if palungId == 1 then
                 PakanState.Palung1Info = infoStr
@@ -1624,13 +1657,8 @@ local TernakHub = (function()
                 for _, item in ipairs(PakanConfig.PalungList) do
                     if not PakanState.Running or not isScriptRunning then break end
                     local obj = detectPalungObject(item.name)
-                    if obj then
-                        isiPakan(item.id)
-                    else
-                        -- Tetap coba invoke jika objek tidak di-stream client
-                        isiPakan(item.id)
-                    end
-                    task.wait(0.5)
+                    isiPakan(item.id, obj)
+                    task.wait(0.4)
                 end
                 cb.pakan()
                 task.wait(PakanConfig.Interval)
@@ -1647,7 +1675,9 @@ local TernakHub = (function()
         end
     end
 
-    -- Dung & Route
+    -- ========================================================
+    -- DETEKSI KOTORAN & DELAY TULISAN AMBIL KOTORAN (TRAKTOR)
+    -- ========================================================
     local DungConfig = {
         TargetName = "Kotoran_Kambing__Kotoran",
         FuzzyPrefix = "kotoran_kambing",
@@ -1655,7 +1685,9 @@ local TernakHub = (function()
         ArriveDistance = 4,
         RetryCooldown = 4,
         RequireOwned = false,
-        OnlyWhenDriving = true
+        OnlyWhenDriving = true,
+        TextDelay = 1.5,      -- Jeda waktu (detik) penampilan tulisan saat ambil kotoran
+        DwellTime = 0.5       -- Jeda traktor berhenti sesaat ketika sampai di kotoran
     }
 
     local DungState = {
@@ -1663,7 +1695,9 @@ local TernakHub = (function()
         Detected = 0,
         Collected = 0,
         Target = nil,
+        StatusText = nil,
         LastLogged = nil,
+        LastLogTime = 0,
         Recent = {}
     }
 
@@ -1767,8 +1801,10 @@ local TernakHub = (function()
                         local cur = DungState.Target
                         if not (cur and cur.Parent) then
                             DungState.Target = best
-                            if best and DungState.LastLogged ~= best then
+                            local now = os.clock()
+                            if best and (now - DungState.LastLogTime >= DungConfig.TextDelay) and DungState.LastLogged ~= best then
                                 DungState.LastLogged = best
+                                DungState.LastLogTime = now
                                 print(string.format("[Kotoran Kambing] Terdeteksi (%s): %s",
                                     owned and "cocok owner" or "terdekat", best:GetFullName()))
                             end
@@ -1794,6 +1830,7 @@ local TernakHub = (function()
         end
         DungState.Target = nil
         DungState.Detected = 0
+        DungState.StatusText = nil
         table.clear(DungState.Recent)
     end
 
@@ -1902,6 +1939,7 @@ local TernakHub = (function()
     local function routeTick(model)
         local pos = model:GetPivot().Position
 
+        -- Prioritas 1: Ambil Kotoran dengan jeda/delay tulisan
         if DungState.Running and DungState.Target then
             local obj = DungState.Target
             if obj.Parent then
@@ -1909,10 +1947,27 @@ local TernakHub = (function()
                 if goal then
                     local dt = RunService.Heartbeat:Wait()
                     if stepToward(model, dt, goal, DungConfig.ArriveDistance) then
+                        -- Tampilkan tulisan proses ambil
+                        DungState.StatusText = "Mengambil Kotoran..."
+                        cb.dung()
+
+                        if DungConfig.DwellTime > 0 then
+                            task.wait(DungConfig.DwellTime)
+                        end
+
                         DungState.Recent[obj] = os.clock()
                         DungState.Target = nil
                         DungState.Collected += 1
+                        DungState.StatusText = "Kotoran Diambil!"
                         cb.dung()
+
+                        -- Delay agar tulisan terbaca jelas di UI sebelum hilang
+                        if DungConfig.TextDelay > 0 then
+                            task.wait(DungConfig.TextDelay)
+                        end
+                        DungState.StatusText = nil
+                        cb.dung()
+
                         if ConvertState.Running then
                             task.delay(ConvertConfig.TriggerDelay, convertNow)
                         end
@@ -1923,6 +1978,7 @@ local TernakHub = (function()
             DungState.Target = nil
         end
 
+        -- Prioritas 2: Rute Kandang
         local list = selectedKandangNames()
         if #list == 0 then
             if not RouteState.WarnedEmpty then
@@ -2083,14 +2139,14 @@ end)()
 -- ========================================================
 local GachaHub = (function()
     local Config = {
-        ClaimDelay = 0.15,     -- Delay antar buka box
-        CycleCooldown = 1.8,   -- Cooldown jeda melihat result sebelum reset & lanjut batch baru
+        ClaimDelay = 0.15,
+        CycleCooldown = 1.8,
         MinInterval = 0.05
     }
 
     local State = {
         Running = false,
-        Phase = "IDLE",        -- IDLE, SPINNING, OPENING, DONE
+        Phase = "IDLE",
         BoxesOpened = 0,
         TotalOpened = 0,
         CycleCount = 0,
@@ -2184,14 +2240,12 @@ local GachaHub = (function()
 
         gachaThread = task.spawn(function()
             while State.Running and isScriptRunning do
-                -- 1. Reset hasil sebelumnya sebelum mulai batch baru
                 State.Phase = "SPINNING"
                 State.BoxesOpened = 0
                 table.clear(State.CurrentResults)
                 State.LastResultText = "Memulai gacha baru (Spin 10x)..."
                 onUpdate()
 
-                -- 2. Invoke Spin 10x pakai uang
                 local spinOk, spinRes = doSpinWithMoney()
                 if not spinOk then
                     warn("[AutoGacha]: SpinX10WithMoney gagal, mencoba lagi dalam 2 detik")
@@ -2204,7 +2258,6 @@ local GachaHub = (function()
                     table.insert(State.CurrentResults, it)
                 end
 
-                -- 3. Buka semua box (total 10 box)
                 State.Phase = "OPENING"
                 onUpdate()
 
@@ -2228,7 +2281,6 @@ local GachaHub = (function()
 
                 if not State.Running or not isScriptRunning then break end
 
-                -- 4. Tampilkan result batch setelah 10 box dibuka
                 State.Phase = "DONE"
                 State.CycleCount += 1
 
@@ -2240,7 +2292,6 @@ local GachaHub = (function()
                 end
                 onUpdate()
 
-                -- Cooldown melihat result sebelum di-reset untuk batch berikutnya
                 task.wait(Config.CycleCooldown)
             end
             gachaThread = nil
@@ -3172,7 +3223,7 @@ do
 end
 
 -- ========================================================
--- TAB 5: TERNAK PAGE (TERMASUK AUTO ISI PAKAN PALUNG 1 & 2)
+-- TAB 5: TERNAK PAGE (TERMASUK AUTO ISI PAKAN PALUNG 1 & 2 DENGAN RADIUS 9999)
 -- ========================================================
 local TernakPage = Instance.new("Frame")
 TernakPage.Name = "TernakPage"
@@ -3272,7 +3323,11 @@ local function buildTernakPage()
     end
 
     H.cb.dung = function()
-        dungLbl.Text = string.format("🔍 Kotoran (%d | %dx)", DungState.Detected, DungState.Collected)
+        if DungState.StatusText then
+            dungLbl.Text = string.format("🔍 %s (%dx)", DungState.StatusText, DungState.Collected)
+        else
+            dungLbl.Text = string.format("🔍 Kotoran (%d | %dx)", DungState.Detected, DungState.Collected)
+        end
     end
 
     table.insert(Connections, dungBtn.Activated:Connect(function()
@@ -3347,7 +3402,7 @@ local function buildTernakPage()
         end
     end))
 
-    -- Card: Auto Isi Pakan (Palung 1 & 2)
+    -- Card: Auto Isi Pakan (Palung 1 & 2 - Radius 9999)
     local pakanCard = createModernCard(TernakPage, 40, 118)
 
     local pakanTitle = Instance.new("TextLabel")
@@ -3355,7 +3410,7 @@ local function buildTernakPage()
     pakanTitle.Position = UDim2.new(0, 10, 0, 2)
     pakanTitle.BackgroundTransparency = 1
     pakanTitle.Font = Enum.Font.GothamBold
-    pakanTitle.Text = "🌾 Auto Isi Pakan (Palung 1 & 2)"
+    pakanTitle.Text = "🌾 Auto Isi Pakan (Radius 9999)"
     pakanTitle.TextColor3 = Color3.fromRGB(230, 230, 245)
     pakanTitle.TextSize = 9
     pakanTitle.TextXAlignment = Enum.TextXAlignment.Left
@@ -3500,7 +3555,6 @@ local function buildGachaPage()
     local G = GachaHub
     local GState, GConfig = G.State, G.Config
 
-    -- Status Card
     local statusCard = createModernCard(GachaPage, 48, 0)
 
     local icon = Instance.new("TextLabel")
@@ -3551,7 +3605,6 @@ local function buildGachaPage()
     badgeText.TextSize = 9
     badgeText.Parent = badge
 
-    -- Card: Settings Delays
     local settingsCard = createModernCard(GachaPage, 62, 52)
 
     local function makeDelayBox(col, labelText, defaultVal)
@@ -3606,7 +3659,6 @@ local function buildGachaPage()
         resetDelayBox.Text = tostring(GConfig.CycleCooldown)
     end))
 
-    -- Card: Live Result Display (Auto Reset saat mulai batch baru)
     local resultCard = createModernCard(GachaPage, 108, 118)
 
     local resultHeader = Instance.new("TextLabel")
@@ -3642,7 +3694,6 @@ local function buildGachaPage()
     resultLabel.TextYAlignment = Enum.TextYAlignment.Top
     resultLabel.Parent = resultScroll
 
-    -- Hero Button
     local gachaHeroBtn, gachaGrad = createHeroToggle(GachaPage, "ToggleGachaBtn", "▶  START AUTO GACHA UANG (10 BOX)", -44)
 
     local function updateGachaUI()
