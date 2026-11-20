@@ -27,9 +27,9 @@ local PlantConfig = {
     INTER_ACTION_DELAY = 0.15,
     CYCLE_COOLDOWN = 0.10,
     DEFAULT_LAHAN = "Semua Lahan",
-    USE_TELEPORT = true, -- Auto TP: teleport ke tiap plot sebelum menanam
-    TP_SETTLE_DELAY = 0.05, -- jeda singkat setelah teleport sebelum tanam
-    PLOT4_RADIUS = 1000 -- radius (studs) auto plant khusus Plot 4; plot di luar radius dilewati
+    USE_TELEPORT = true,
+    TP_SETTLE_DELAY = 0.05,
+    PLOT4_RADIUS = 1000
 }
 
 local LAHAN_LIST = {
@@ -211,7 +211,7 @@ end
 CleanState.KosanOwner, CleanState.RoomNumber = parseKosanID(CleanState.CurrentKosanID)
 
 -- ========================================================
--- HELPER: SAFE TELEPORT (JARAK JAUH)
+-- HELPER: SAFE TELEPORT
 -- ========================================================
 local function safeTeleport(targetPos: Vector3)
     local char = LocalPlayer.Character
@@ -234,7 +234,7 @@ local function safeTeleport(targetPos: Vector3)
 end
 
 -- ========================================================
--- COMPAT LAYER (MULTI-EXECUTOR)
+-- COMPAT LAYER
 -- ========================================================
 local function firePrompt(prompt)
     if typeof(fireproximityprompt) == "function" then
@@ -259,12 +259,6 @@ local function getExecutorName()
     end
     return "Unknown"
 end
-
-print(string.format("[IndoKost] Executor: %s | fireproximityprompt: %s | firesignal: %s | gethui: %s",
-    getExecutorName(),
-    typeof(fireproximityprompt) == "function" and "ya" or "fallback",
-    typeof(firesignal) == "function" and "ya" or "fallback",
-    typeof(gethui) == "function" and "ya" or "CoreGui/PlayerGui"))
 
 -- ========================================================
 -- NETWORK RESOLVERS
@@ -328,7 +322,7 @@ local function findNearestDirt()
 end
 
 -- ========================================================
--- AUTO SAMPAH (BAGIAN DARI AUTO CLEAN): AMBIL + BUANG
+-- AUTO SAMPAH
 -- ========================================================
 local TrashConfig = {
     PickupKeywords  = { "sampah", "trash", "garbage", "litter" },
@@ -441,7 +435,7 @@ local function logBinChoice(prompt, owned)
         print(string.format("[IndoKost] Tong dipilih (%s): %s",
             owned and "cocok owner" or "fallback terdekat", prompt:GetFullName()))
     else
-        warn("[IndoKost] Tidak ada tong milik kosan sendiri yang ditemukan (cek ID kosan / DisposeFallbackRadius)")
+        warn("[IndoKost] Tidak ada tong milik kosan sendiri yang ditemukan")
     end
 end
 
@@ -1144,14 +1138,15 @@ local function stopAntiAfk()
 end
 
 -- ========================================================
--- TERNAK & TRAKTOR HUB
+-- TERNAK & TRAKTOR HUB (+ AUTO ISI PAKAN PALUNG 1 & 2)
 -- ========================================================
 local TernakHub = (function()
     local cb = {
         traktor = function() end,
         dung = function() end,
         route = function() end,
-        convert = function() end
+        convert = function() end,
+        pakan = function() end
     }
     local RunService = game:GetService("RunService")
 
@@ -1548,6 +1543,111 @@ local TernakHub = (function()
         end
     end
 
+    -- ========================================================
+    -- AUTO ISI PAKAN TERNAK (Palung_1 & Palung_2)
+    -- ========================================================
+    local PakanConfig = {
+        Interval = 5,
+        PalungList = {
+            { id = 1, name = "Palung_1" },
+            { id = 2, name = "Palung_2" }
+        }
+    }
+
+    local PakanState = {
+        Running = false,
+        Palung1Info = "P1: -",
+        Palung2Info = "P2: -",
+        SuccessCount = 0
+    }
+
+    local pakanThread = nil
+    local pakanRF = nil
+
+    local function getPakanRemote()
+        if pakanRF and pakanRF.Parent then return pakanRF end
+        pcall(function()
+            pakanRF = ReplicatedStorage
+                :WaitForChild("NKSystem", 5)
+                :WaitForChild("Packages", 5)
+                :WaitForChild("Knit", 5)
+                :WaitForChild("Services", 5)
+                :WaitForChild("TernakService", 5)
+                :WaitForChild("RF", 5)
+                :WaitForChild("IsiPakan", 5)
+        end)
+        return pakanRF
+    end
+
+    local function detectPalungObject(targetName)
+        local lowerTarget = string.lower(targetName)
+        for _, obj in ipairs(Workspace:GetDescendants()) do
+            local lname = string.lower(obj.Name)
+            if lname == lowerTarget or string.find(lname, lowerTarget, 1, true) then
+                return obj
+            end
+        end
+        return nil
+    end
+
+    local function isiPakan(palungId)
+        local rf = getPakanRemote()
+        if not rf then
+            warn("[IsiPakan]: Remote TernakService.RF.IsiPakan tidak ditemukan")
+            return nil
+        end
+
+        local ok, res = pcall(function()
+            return rf:InvokeServer(palungId)
+        end)
+
+        if ok and type(res) == "table" then
+            PakanState.SuccessCount += 1
+            local stok = res.stok or res.Stok or "-"
+            local maxJml = res.jumlah or res.Jumlah or "-"
+            local nama = res.nama or res.Nama or "Pakan"
+            local infoStr = string.format("P%d: %s/%s (%s)", palungId, tostring(stok), tostring(maxJml), tostring(nama))
+            if palungId == 1 then
+                PakanState.Palung1Info = infoStr
+            else
+                PakanState.Palung2Info = infoStr
+            end
+            return res
+        end
+        return nil
+    end
+
+    local function startPakanWorker()
+        if pakanThread then return end
+        pakanThread = task.spawn(function()
+            while PakanState.Running and isScriptRunning do
+                for _, item in ipairs(PakanConfig.PalungList) do
+                    if not PakanState.Running or not isScriptRunning then break end
+                    local obj = detectPalungObject(item.name)
+                    if obj then
+                        isiPakan(item.id)
+                    else
+                        -- Tetap coba invoke jika objek tidak di-stream client
+                        isiPakan(item.id)
+                    end
+                    task.wait(0.5)
+                end
+                cb.pakan()
+                task.wait(PakanConfig.Interval)
+            end
+            pakanThread = nil
+        end)
+    end
+
+    local function stopPakanWorker()
+        PakanState.Running = false
+        if pakanThread then
+            task.cancel(pakanThread)
+            pakanThread = nil
+        end
+    end
+
+    -- Dung & Route
     local DungConfig = {
         TargetName = "Kotoran_Kambing__Kotoran",
         FuzzyPrefix = "kotoran_kambing",
@@ -1960,6 +2060,8 @@ local TernakHub = (function()
         TraktorState = TraktorState,
         startTraktorSpawnWorker = startTraktorSpawnWorker, stopTraktorSpawnWorker = stopTraktorSpawnWorker,
         startTraktorDriveWorker = startTraktorDriveWorker, stopTraktorDriveWorker = stopTraktorDriveWorker,
+        PakanState = PakanState,
+        startPakanWorker = startPakanWorker, stopPakanWorker = stopPakanWorker,
         DungConfig = DungConfig, DungState = DungState,
         startDungWorker = startDungWorker, stopDungWorker = stopDungWorker,
         RouteConfig = RouteConfig, RouteState = RouteState,
@@ -1969,6 +2071,7 @@ local TernakHub = (function()
             pcall(stopTraktorSpawnWorker)
             pcall(stopTraktorDriveWorker)
             pcall(stopConvertWorker)
+            pcall(stopPakanWorker)
             pcall(stopDungWorker)
             pcall(stopRouteWorker)
         end
@@ -1976,26 +2079,29 @@ local TernakHub = (function()
 end)()
 
 -- ========================================================
--- MODUL: AUTO GACHA & AUTO BUKA BLINDBOX (GACHA HUB)
+-- MODUL: AUTO GACHA UANG + BUKA 10 BOX DENGAN RESULT & RESET
 -- ========================================================
 local GachaHub = (function()
-    local GachaConfig = {
-        SpinInterval = 0.5,
-        ClaimInterval = 0.2,
+    local Config = {
+        ClaimDelay = 0.15,     -- Delay antar buka box
+        CycleCooldown = 1.8,   -- Cooldown jeda melihat result sebelum reset & lanjut batch baru
         MinInterval = 0.05
     }
 
-    local GachaState = {
-        AutoSpinRunning = false,
-        AutoClaimRunning = false,
-        SpinCount = 0,
-        ClaimCount = 0
+    local State = {
+        Running = false,
+        Phase = "IDLE",        -- IDLE, SPINNING, OPENING, DONE
+        BoxesOpened = 0,
+        TotalOpened = 0,
+        CycleCount = 0,
+        CurrentResults = {},
+        LastResultText = "Belum ada result gacha"
     }
 
-    local spinRF = nil
+    local spinMoneyRF = nil
     local claimRF = nil
 
-    local function getRemote(name)
+    local function getGachaRemote(name)
         local rf = nil
         pcall(function()
             rf = ReplicatedStorage
@@ -2012,105 +2118,152 @@ local GachaHub = (function()
 
     local onUpdate = function() end
 
-    local function doSpin()
-        if not spinRF or not spinRF.Parent then
-            spinRF = getRemote("SpinX10WithFree")
+    local function parseItemNames(raw)
+        local items = {}
+        if type(raw) ~= "table" then return items end
+
+        local function checkTable(t, depth)
+            if depth > 4 then return end
+            if type(t) ~= "table" then return end
+
+            local name = t.nama or t.name or t.Nama or t.Name or t.Item or t.Reward
+            if name then
+                local qty = t.jumlah or t.count or t.amount or t.stok or 1
+                table.insert(items, string.format("%s (x%s)", tostring(name), tostring(qty)))
+                return
+            end
+
+            for _, val in pairs(t) do
+                if type(val) == "table" then
+                    checkTable(val, depth + 1)
+                elseif type(val) == "string" and #val > 2 and not (val == "ok" or val == "true") then
+                    table.insert(items, val)
+                end
+            end
         end
-        if not spinRF then
-            warn("[AutoGacha]: Remote GachaService.SpinX10WithFree tidak ditemukan")
-            return false
+
+        checkTable(raw, 1)
+        return items
+    end
+
+    local function doSpinWithMoney()
+        if not spinMoneyRF or not spinMoneyRF.Parent then
+            spinMoneyRF = getGachaRemote("SpinX10WithMoney")
+        end
+        if not spinMoneyRF then
+            warn("[AutoGacha]: Remote GachaService.SpinX10WithMoney tidak ditemukan")
+            return false, nil
         end
 
         local ok, res = pcall(function()
-            return table.pack(spinRF:InvokeServer())
+            return spinMoneyRF:InvokeServer()
         end)
-        if ok then
-            GachaState.SpinCount += 1
-        else
-            warn("[AutoGacha Error]:", res)
-        end
-        return ok
+        return ok, res
     end
 
-    local function doClaim()
+    local function doClaimReward()
         if not claimRF or not claimRF.Parent then
-            claimRF = getRemote("ClaimOneMultiReward")
+            claimRF = getGachaRemote("ClaimOneMultiReward")
         end
         if not claimRF then
-            warn("[AutoClaim]: Remote GachaService.ClaimOneMultiReward tidak ditemukan")
-            return false
+            warn("[AutoGacha]: Remote GachaService.ClaimOneMultiReward tidak ditemukan")
+            return false, nil
         end
 
         local ok, res = pcall(function()
-            return table.pack(claimRF:InvokeServer())
+            return claimRF:InvokeServer()
         end)
-        if ok then
-            GachaState.ClaimCount += 1
-        else
-            warn("[AutoClaim Error]:", res)
-        end
-        return ok
+        return ok, res
     end
 
-    local spinThread = nil
-    local claimThread = nil
+    local gachaThread = nil
 
-    local function startSpin()
-        if spinThread then return end
-        GachaState.AutoSpinRunning = true
-        spinThread = task.spawn(function()
-            while GachaState.AutoSpinRunning and isScriptRunning do
-                doSpin()
+    local function startGachaLoop()
+        if gachaThread then return end
+        State.Running = true
+
+        gachaThread = task.spawn(function()
+            while State.Running and isScriptRunning do
+                -- 1. Reset hasil sebelumnya sebelum mulai batch baru
+                State.Phase = "SPINNING"
+                State.BoxesOpened = 0
+                table.clear(State.CurrentResults)
+                State.LastResultText = "Memulai gacha baru (Spin 10x)..."
                 onUpdate()
-                task.wait(GachaConfig.SpinInterval)
-            end
-            spinThread = nil
-        end)
-    end
 
-    local function stopSpin()
-        GachaState.AutoSpinRunning = false
-        if spinThread then
-            task.cancel(spinThread)
-            spinThread = nil
-        end
-        onUpdate()
-    end
+                -- 2. Invoke Spin 10x pakai uang
+                local spinOk, spinRes = doSpinWithMoney()
+                if not spinOk then
+                    warn("[AutoGacha]: SpinX10WithMoney gagal, mencoba lagi dalam 2 detik")
+                    task.wait(2)
+                    continue
+                end
 
-    local function startClaim()
-        if claimThread then return end
-        GachaState.AutoClaimRunning = true
-        claimThread = task.spawn(function()
-            while GachaState.AutoClaimRunning and isScriptRunning do
-                doClaim()
+                local immediateItems = parseItemNames(spinRes)
+                for _, it in ipairs(immediateItems) do
+                    table.insert(State.CurrentResults, it)
+                end
+
+                -- 3. Buka semua box (total 10 box)
+                State.Phase = "OPENING"
                 onUpdate()
-                task.wait(GachaConfig.ClaimInterval)
+
+                for boxIndex = 1, 10 do
+                    if not State.Running or not isScriptRunning then break end
+
+                    local claimOk, claimRes = doClaimReward()
+                    State.BoxesOpened = boxIndex
+                    State.TotalOpened += 1
+
+                    if claimOk and claimRes then
+                        local openedItems = parseItemNames(claimRes)
+                        for _, it in ipairs(openedItems) do
+                            table.insert(State.CurrentResults, it)
+                        end
+                    end
+
+                    onUpdate()
+                    task.wait(Config.ClaimDelay)
+                end
+
+                if not State.Running or not isScriptRunning then break end
+
+                -- 4. Tampilkan result batch setelah 10 box dibuka
+                State.Phase = "DONE"
+                State.CycleCount += 1
+
+                if #State.CurrentResults > 0 then
+                    State.LastResultText = string.format("Batch #%d Selesai (10/10 Box):\n• %s",
+                        State.CycleCount, table.concat(State.CurrentResults, "\n• "))
+                else
+                    State.LastResultText = string.format("Batch #%d Selesai (10/10 Box Terbuka)", State.CycleCount)
+                end
+                onUpdate()
+
+                -- Cooldown melihat result sebelum di-reset untuk batch berikutnya
+                task.wait(Config.CycleCooldown)
             end
-            claimThread = nil
+            gachaThread = nil
         end)
     end
 
-    local function stopClaim()
-        GachaState.AutoClaimRunning = false
-        if claimThread then
-            task.cancel(claimThread)
-            claimThread = nil
+    local function stopGachaLoop()
+        State.Running = false
+        if gachaThread then
+            task.cancel(gachaThread)
+            gachaThread = nil
         end
+        State.Phase = "IDLE"
         onUpdate()
     end
 
     return {
-        Config = GachaConfig,
-        State = GachaState,
-        startSpin = startSpin,
-        stopSpin = stopSpin,
-        startClaim = startClaim,
-        stopClaim = stopClaim,
+        Config = Config,
+        State = State,
+        start = startGachaLoop,
+        stop = stopGachaLoop,
         setOnUpdate = function(fn) onUpdate = fn end,
-        stopAll = function()
-            pcall(stopSpin)
-            pcall(stopClaim)
-        end
+        stopAll = function() pcall(stopGachaLoop) end
     }
 end)()
 
@@ -2291,7 +2444,7 @@ local MiniBtn = createHeaderIconBtn("—", Color3.fromRGB(48, 52, 75))
 local CloseBtn = createHeaderIconBtn("✕", Color3.fromRGB(225, 29, 72), Color3.fromRGB(255, 120, 140))
 
 -- ========================================================
--- TAB BAR (6 SEGMENTS TERMASUK GACHA)
+-- TAB BAR
 -- ========================================================
 local TabBar = Instance.new("Frame")
 TabBar.Name = "TabBar"
@@ -3019,7 +3172,7 @@ do
 end
 
 -- ========================================================
--- TAB 5: TERNAK PAGE
+-- TAB 5: TERNAK PAGE (TERMASUK AUTO ISI PAKAN PALUNG 1 & 2)
 -- ========================================================
 local TernakPage = Instance.new("Frame")
 TernakPage.Name = "TernakPage"
@@ -3034,6 +3187,7 @@ local function buildTernakPage()
     local ConvertState, startConvertWorker, stopConvertWorker = H.ConvertState, H.startConvertWorker, H.stopConvertWorker
     local startTraktorSpawnWorker, stopTraktorSpawnWorker = H.startTraktorSpawnWorker, H.stopTraktorSpawnWorker
     local startTraktorDriveWorker, stopTraktorDriveWorker = H.startTraktorDriveWorker, H.stopTraktorDriveWorker
+    local PakanState, startPakanWorker, stopPakanWorker = H.PakanState, H.startPakanWorker, H.stopPakanWorker
     local DungState, startDungWorker, stopDungWorker = H.DungState, H.startDungWorker, H.stopDungWorker
     local RouteConfig, RouteState = H.RouteConfig, H.RouteState
     local toggleRouteProfile = H.toggleRouteProfile
@@ -3151,6 +3305,7 @@ local function buildTernakPage()
         end
     end))
 
+    -- Mesin Convert Card
     local convertCard = createModernCard(TernakPage, 30, 82)
 
     local convertLbl = Instance.new("TextLabel")
@@ -3192,7 +3347,60 @@ local function buildTernakPage()
         end
     end))
 
-    local plot8Card = createModernCard(TernakPage, 76, 118)
+    -- Card: Auto Isi Pakan (Palung 1 & 2)
+    local pakanCard = createModernCard(TernakPage, 40, 118)
+
+    local pakanTitle = Instance.new("TextLabel")
+    pakanTitle.Size = UDim2.new(1, -76, 0, 18)
+    pakanTitle.Position = UDim2.new(0, 10, 0, 2)
+    pakanTitle.BackgroundTransparency = 1
+    pakanTitle.Font = Enum.Font.GothamBold
+    pakanTitle.Text = "🌾 Auto Isi Pakan (Palung 1 & 2)"
+    pakanTitle.TextColor3 = Color3.fromRGB(230, 230, 245)
+    pakanTitle.TextSize = 9
+    pakanTitle.TextXAlignment = Enum.TextXAlignment.Left
+    pakanTitle.Parent = pakanCard
+
+    local pakanSub = Instance.new("TextLabel")
+    pakanSub.Size = UDim2.new(1, -76, 0, 16)
+    pakanSub.Position = UDim2.new(0, 10, 0, 20)
+    pakanSub.BackgroundTransparency = 1
+    pakanSub.Font = Enum.Font.GothamMedium
+    pakanSub.Text = "P1: - | P2: -"
+    pakanSub.TextColor3 = Color3.fromRGB(150, 155, 175)
+    pakanSub.TextSize = 8
+    pakanSub.TextXAlignment = Enum.TextXAlignment.Left
+    pakanSub.Parent = pakanCard
+
+    local pakanBtn = Instance.new("TextButton")
+    pakanBtn.Size = UDim2.new(0, 44, 0, 22)
+    pakanBtn.Position = UDim2.new(1, -54, 0.5, -11)
+    pakanBtn.BackgroundColor3 = Color3.fromRGB(45, 48, 65)
+    pakanBtn.BorderSizePixel = 0
+    pakanBtn.Font = Enum.Font.GothamBold
+    pakanBtn.Text = "OFF"
+    pakanBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+    pakanBtn.TextSize = 9
+    pakanBtn.AutoButtonColor = false
+    pakanBtn.Parent = pakanCard
+    Instance.new("UICorner", pakanBtn).CornerRadius = UDim.new(0, 6)
+
+    H.cb.pakan = function()
+        pakanSub.Text = string.format("%s | %s", PakanState.Palung1Info, PakanState.Palung2Info)
+    end
+
+    table.insert(Connections, pakanBtn.Activated:Connect(function()
+        PakanState.Running = not PakanState.Running
+        paintSwitch(pakanBtn, PakanState.Running)
+        if PakanState.Running then
+            startPakanWorker()
+        else
+            stopPakanWorker()
+        end
+    end))
+
+    -- Plot 8 Card
+    local plot8Card = createModernCard(TernakPage, 76, 164)
     local prof2 = RouteConfig.Profiles[2]
 
     local plot8Lbl = Instance.new("TextLabel")
@@ -3279,7 +3487,7 @@ end
 buildTernakPage()
 
 -- ========================================================
--- TAB 6: AUTO GACHA & BLINDBOX PAGE
+-- TAB 6: AUTO GACHA UANG & BUKA 10 BOX PAGE
 -- ========================================================
 local GachaPage = Instance.new("Frame")
 GachaPage.Name = "GachaPage"
@@ -3292,6 +3500,7 @@ local function buildGachaPage()
     local G = GachaHub
     local GState, GConfig = G.State, G.Config
 
+    -- Status Card
     local statusCard = createModernCard(GachaPage, 48, 0)
 
     local icon = Instance.new("TextLabel")
@@ -3308,9 +3517,9 @@ local function buildGachaPage()
     title.Position = UDim2.new(0, 42, 0, 8)
     title.BackgroundTransparency = 1
     title.Font = Enum.Font.GothamBold
-    title.Text = "Auto Gacha & Blindbox"
+    title.Text = "Auto Gacha Uang & Buka 10 Box"
     title.TextColor3 = Color3.fromRGB(240, 240, 250)
-    title.TextSize = 11
+    title.TextSize = 10
     title.TextXAlignment = Enum.TextXAlignment.Left
     title.Parent = statusCard
 
@@ -3319,9 +3528,9 @@ local function buildGachaPage()
     sub.Position = UDim2.new(0, 42, 0, 25)
     sub.BackgroundTransparency = 1
     sub.Font = Enum.Font.Gotham
-    sub.Text = "Spin: 0x | Buka: 0x"
+    sub.Text = "Box Terbuka: 0/10 | Batch: 0"
     sub.TextColor3 = Color3.fromRGB(140, 145, 165)
-    sub.TextSize = 10
+    sub.TextSize = 9
     sub.TextXAlignment = Enum.TextXAlignment.Left
     sub.Parent = statusCard
 
@@ -3342,24 +3551,13 @@ local function buildGachaPage()
     badgeText.TextSize = 9
     badgeText.Parent = badge
 
-    -- Card Setting Interval Delays
-    local settingsCard = createModernCard(GachaPage, 84, 54)
-
-    local settingsTitle = Instance.new("TextLabel")
-    settingsTitle.Size = UDim2.new(1, -24, 0, 14)
-    settingsTitle.Position = UDim2.new(0, 12, 0, 6)
-    settingsTitle.BackgroundTransparency = 1
-    settingsTitle.Font = Enum.Font.GothamBold
-    settingsTitle.Text = "PENGATURAN INTERVAL DELAY (DETIK)"
-    settingsTitle.TextColor3 = Color3.fromRGB(99, 102, 241)
-    settingsTitle.TextSize = 9
-    settingsTitle.TextXAlignment = Enum.TextXAlignment.Left
-    settingsTitle.Parent = settingsCard
+    -- Card: Settings Delays
+    local settingsCard = createModernCard(GachaPage, 62, 52)
 
     local function makeDelayBox(col, labelText, defaultVal)
         local lbl = Instance.new("TextLabel")
         lbl.Size = UDim2.new(0.5, -16, 0, 14)
-        lbl.Position = UDim2.new(col * 0.5, 12, 0, 24)
+        lbl.Position = UDim2.new(col * 0.5, 12, 0, 6)
         lbl.BackgroundTransparency = 1
         lbl.Font = Enum.Font.GothamBold
         lbl.Text = labelText
@@ -3369,8 +3567,8 @@ local function buildGachaPage()
         lbl.Parent = settingsCard
 
         local box = Instance.new("TextBox")
-        box.Size = UDim2.new(0.5, -16, 0, 26)
-        box.Position = UDim2.new(col * 0.5, 12, 0, 42)
+        box.Size = UDim2.new(0.5, -16, 0, 24)
+        box.Position = UDim2.new(col * 0.5, 12, 0, 24)
         box.BackgroundColor3 = Color3.fromRGB(15, 16, 24)
         box.BorderSizePixel = 0
         box.TextColor3 = Color3.fromRGB(240, 240, 250)
@@ -3393,84 +3591,88 @@ local function buildGachaPage()
         return box
     end
 
-    local spinInput = makeDelayBox(0, "Delay Gacha (detik):", GConfig.SpinInterval)
-    local claimInput = makeDelayBox(1, "Delay Buka (detik):", GConfig.ClaimInterval)
+    local claimDelayBox = makeDelayBox(0, "Delay Buka Box (s):", GConfig.ClaimDelay)
+    local resetDelayBox = makeDelayBox(1, "Cooldown Reset (s):", GConfig.CycleCooldown)
 
-    table.insert(Connections, spinInput.FocusLost:Connect(function()
-        local val = tonumber(spinInput.Text)
-        GConfig.SpinInterval = (val and val >= GConfig.MinInterval) and val or 0.5
-        spinInput.Text = tostring(GConfig.SpinInterval)
+    table.insert(Connections, claimDelayBox.FocusLost:Connect(function()
+        local val = tonumber(claimDelayBox.Text)
+        GConfig.ClaimDelay = (val and val >= GConfig.MinInterval) and val or 0.15
+        claimDelayBox.Text = tostring(GConfig.ClaimDelay)
     end))
 
-    table.insert(Connections, claimInput.FocusLost:Connect(function()
-        local val = tonumber(claimInput.Text)
-        GConfig.ClaimInterval = (val and val >= GConfig.MinInterval) and val or 0.2
-        claimInput.Text = tostring(GConfig.ClaimInterval)
+    table.insert(Connections, resetDelayBox.FocusLost:Connect(function()
+        local val = tonumber(resetDelayBox.Text)
+        GConfig.CycleCooldown = (val and val >= 0.5) and val or 1.8
+        resetDelayBox.Text = tostring(GConfig.CycleCooldown)
     end))
 
-    -- Info Card
-    local infoCard = createModernCard(GachaPage, 46, 144)
-    local infoLabel = Instance.new("TextLabel")
-    infoLabel.Size = UDim2.new(1, -20, 1, 0)
-    infoLabel.Position = UDim2.new(0, 10, 0, 0)
-    infoLabel.BackgroundTransparency = 1
-    infoLabel.Font = Enum.Font.GothamMedium
-    infoLabel.Text = "⚡ SpinX10WithFree: Gacha 10x blindbox otomatis\n📦 ClaimOneMultiReward: Buka semua hasil blindbox"
-    infoLabel.TextColor3 = Color3.fromRGB(150, 155, 175)
-    infoLabel.TextSize = 9
-    infoLabel.TextWrapped = true
-    infoLabel.Parent = infoCard
+    -- Card: Live Result Display (Auto Reset saat mulai batch baru)
+    local resultCard = createModernCard(GachaPage, 108, 118)
 
-    -- Hero Buttons
-    local spinBtn, spinGrad = createHeroToggle(GachaPage, "ToggleGachaSpinBtn", "▶  START AUTO GACHA 10X (BLINDBOX)", -92)
-    local claimBtn, claimGrad = createHeroToggle(GachaPage, "ToggleGachaClaimBtn", "▶  START AUTO BUKA BLINDBOX", -44)
+    local resultHeader = Instance.new("TextLabel")
+    resultHeader.Size = UDim2.new(1, -20, 0, 16)
+    resultHeader.Position = UDim2.new(0, 10, 0, 6)
+    resultHeader.BackgroundTransparency = 1
+    resultHeader.Font = Enum.Font.GothamBold
+    resultHeader.Text = "HASIL GACHA (RESULT BATCH):"
+    resultHeader.TextColor3 = Color3.fromRGB(99, 102, 241)
+    resultHeader.TextSize = 9
+    resultHeader.TextXAlignment = Enum.TextXAlignment.Left
+    resultHeader.Parent = resultCard
 
-    local function updateStatusUI()
-        sub.Text = string.format("Spin: %dx | Buka: %dx", GState.SpinCount, GState.ClaimCount)
-        local anyRunning = GState.AutoSpinRunning or GState.AutoClaimRunning
-        badgeText.Text = anyRunning and "● ACTIVE" or "● IDLE"
-        badgeText.TextColor3 = anyRunning and Color3.fromRGB(52, 211, 153) or Color3.fromRGB(160, 165, 185)
-        badge.BackgroundColor3 = anyRunning and Color3.fromRGB(20, 45, 35) or Color3.fromRGB(30, 33, 46)
+    local resultScroll = Instance.new("ScrollingFrame")
+    resultScroll.Size = UDim2.new(1, -20, 0, 76)
+    resultScroll.Position = UDim2.new(0, 10, 0, 24)
+    resultScroll.BackgroundTransparency = 1
+    resultScroll.BorderSizePixel = 0
+    resultScroll.ScrollBarThickness = 3
+    resultScroll.ScrollBarImageColor3 = Color3.fromRGB(99, 102, 241)
+    resultScroll.Parent = resultCard
+
+    local resultLabel = Instance.new("TextLabel")
+    resultLabel.Size = UDim2.new(1, -6, 1, 0)
+    resultLabel.Position = UDim2.new(0, 0, 0, 0)
+    resultLabel.BackgroundTransparency = 1
+    resultLabel.Font = Enum.Font.GothamMedium
+    resultLabel.Text = GState.LastResultText
+    resultLabel.TextColor3 = Color3.fromRGB(220, 225, 245)
+    resultLabel.TextSize = 9
+    resultLabel.TextWrapped = true
+    resultLabel.TextXAlignment = Enum.TextXAlignment.Left
+    resultLabel.TextYAlignment = Enum.TextYAlignment.Top
+    resultLabel.Parent = resultScroll
+
+    -- Hero Button
+    local gachaHeroBtn, gachaGrad = createHeroToggle(GachaPage, "ToggleGachaBtn", "▶  START AUTO GACHA UANG (10 BOX)", -44)
+
+    local function updateGachaUI()
+        sub.Text = string.format("Box Terbuka: %d/10 | Fase: %s | Total: %d", GState.BoxesOpened, GState.Phase, GState.TotalOpened)
+        resultLabel.Text = GState.LastResultText
+
+        badgeText.Text = GState.Running and "● " .. GState.Phase or "● IDLE"
+        badgeText.TextColor3 = GState.Running and Color3.fromRGB(52, 211, 153) or Color3.fromRGB(160, 165, 185)
+        badge.BackgroundColor3 = GState.Running and Color3.fromRGB(20, 45, 35) or Color3.fromRGB(30, 33, 46)
     end
 
-    G.setOnUpdate(updateStatusUI)
+    G.setOnUpdate(updateGachaUI)
 
-    table.insert(Connections, spinBtn.Activated:Connect(function()
-        if not GState.AutoSpinRunning then
-            spinGrad.Color = ColorSequence.new({
+    table.insert(Connections, gachaHeroBtn.Activated:Connect(function()
+        if not GState.Running then
+            gachaGrad.Color = ColorSequence.new({
                 ColorSequenceKeypoint.new(0, Color3.fromRGB(52, 211, 153)),
                 ColorSequenceKeypoint.new(1, Color3.fromRGB(16, 185, 129))
             })
-            spinBtn.Text = "■  STOP AUTO GACHA 10X (RUNNING)"
-            G.startSpin()
+            gachaHeroBtn.Text = "■  STOP AUTO GACHA (RUNNING)"
+            G.start()
         else
-            spinGrad.Color = ColorSequence.new({
+            gachaGrad.Color = ColorSequence.new({
                 ColorSequenceKeypoint.new(0, Color3.fromRGB(244, 63, 94)),
                 ColorSequenceKeypoint.new(1, Color3.fromRGB(225, 29, 72))
             })
-            spinBtn.Text = "▶  START AUTO GACHA 10X (BLINDBOX)"
-            G.stopSpin()
+            gachaHeroBtn.Text = "▶  START AUTO GACHA UANG (10 BOX)"
+            G.stop()
         end
-        updateStatusUI()
-    end))
-
-    table.insert(Connections, claimBtn.Activated:Connect(function()
-        if not GState.AutoClaimRunning then
-            claimGrad.Color = ColorSequence.new({
-                ColorSequenceKeypoint.new(0, Color3.fromRGB(52, 211, 153)),
-                ColorSequenceKeypoint.new(1, Color3.fromRGB(16, 185, 129))
-            })
-            claimBtn.Text = "■  STOP AUTO BUKA BLINDBOX (RUNNING)"
-            G.startClaim()
-        else
-            claimGrad.Color = ColorSequence.new({
-                ColorSequenceKeypoint.new(0, Color3.fromRGB(244, 63, 94)),
-                ColorSequenceKeypoint.new(1, Color3.fromRGB(225, 29, 72))
-            })
-            claimBtn.Text = "▶  START AUTO BUKA BLINDBOX"
-            G.stopClaim()
-        end
-        updateStatusUI()
+        updateGachaUI()
     end))
 end
 buildGachaPage()
@@ -3691,7 +3893,7 @@ table.insert(Connections, MiniBtn.Activated:Connect(function()
     }):Play()
 end))
 
--- Dragging System
+-- Dragging
 do
     local dragging = false
     local dragInput, dragStart, startPos
