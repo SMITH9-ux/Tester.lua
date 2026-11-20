@@ -1,4 +1,3 @@
-
 -- SERVICES
 local Players = game:GetService("Players")
 local Workspace = game:GetService("Workspace")
@@ -166,7 +165,6 @@ local LAHAN_PRESETS = {
     ["Lahan Kiri 2"]  = LAHAN_LIST["Lahan Kiri 2"],
     ["Lahan Kiri 3"]  = LAHAN_LIST["Lahan Kiri 3"],
     ["Lahan Kiri 4"]  = LAHAN_LIST["Lahan Kiri 4"],
-    -- Plot 4: terpisah, tidak masuk "Semua Lahan"
     ["Semua Plot 4"]  = mergePlotGroups({"Plot 4 Kanan 1", "Plot 4 Kanan 2", "Plot 4 Kiri A", "Plot 4 Kiri B"}),
     ["Plot 4 Kanan 1"] = LAHAN_LIST["Plot 4 Kanan 1"],
     ["Plot 4 Kanan 2"] = LAHAN_LIST["Plot 4 Kanan 2"],
@@ -192,7 +190,7 @@ local CleanConfig = {
     TargetName = "kotoran",
     TargetMaterial = Enum.Material.Plastic,
     DefaultKosanID = "8833771934_19",
-    DefaultRadius = 9999, -- Default Jarak Jauh (9999 studs untuk jangkauan global)
+    DefaultRadius = 9999,
     DefaultLoop = 0.5,
     MinLoopInterval = 0.05,
 }
@@ -203,7 +201,7 @@ local CleanState = {
     RoomNumber = "",
     Radius = CleanConfig.DefaultRadius,
     LoopInterval = CleanConfig.DefaultLoop,
-    USE_TELEPORT = true -- Mode Jarak Jauh (Auto TP ke kotoran)
+    USE_TELEPORT = true
 }
 
 local function parseKosanID(idString)
@@ -238,8 +236,6 @@ end
 -- ========================================================
 -- COMPAT LAYER (MULTI-EXECUTOR)
 -- ========================================================
--- Menekan ProximityPrompt: pakai fireproximityprompt bila ada,
--- jika tidak ada pakai simulasi tahan tombol (InputHoldBegin/End)
 local function firePrompt(prompt)
     if typeof(fireproximityprompt) == "function" then
         local ok = pcall(fireproximityprompt, prompt)
@@ -273,7 +269,6 @@ print(string.format("[IndoKost] Executor: %s | fireproximityprompt: %s | firesig
 -- ========================================================
 -- NETWORK RESOLVERS
 -- ========================================================
--- Knit Tanam Service
 local function resolvePlantRemote(remoteName: string)
     local success, remote = pcall(function()
         return ReplicatedStorage
@@ -291,7 +286,6 @@ end
 local beliBibitRF = resolvePlantRemote("BeliBibit")
 local tanamRF = resolvePlantRemote("Tanam")
 
--- Kosan Clean Remote
 local CleanEvent = nil
 pcall(function()
     CleanEvent = ReplicatedStorage
@@ -337,48 +331,37 @@ end
 -- AUTO SAMPAH (BAGIAN DARI AUTO CLEAN): AMBIL + BUANG
 -- ========================================================
 local TrashConfig = {
-    -- Kata kunci (huruf kecil). Dicocokkan dengan nama/teks ProximityPrompt
-    -- dan nama 3 parent di atasnya. Sesuaikan dengan nama objek di game.
     PickupKeywords  = { "sampah", "trash", "garbage", "litter" },
     DisposeKeywords = { "tong sampah", "tempat sampah", "trashcan", "trash can", "trash bin", "dustbin", "buang", "dispose" },
-    CleanDoneStreak = 3, -- berapa kali cek berturut-turut tanpa kotoran sebelum cek persen kebersihan
-
-    -- Tunggu kebersihan rumah 100% sebelum lanjut ke sampah
+    CleanDoneStreak = 3,
     RequireFullClean = true,
-    CleanPercentKeywords = { "bersih", "clean", "kebersihan", "kotor" }, -- teks/nama UI persen kebersihan
-    CleanPercentTimeout = 0, -- detik. 0 = tunggu 100% tanpa batas waktu; isi mis. 120 agar tidak macet
-
-    -- Deteksi "penuh" (mode gabungan: ambil sampai penuh dulu, baru buang)
-    MaxCarry = 5, -- kapasitas bawa sampah. SESUAIKAN dengan game
+    CleanPercentKeywords = { "bersih", "clean", "kebersihan", "kotor" },
+    CleanPercentTimeout = 0,
+    MaxCarry = 5,
     FullKeywords = { "penuh", "inventory full", "backpack full", "bag full" },
-    NoPromptLimit = 3,        -- berapa kali berturut-turut tidak ada target sebelum ganti fase
-    DisposePhaseTimeout = 20, -- detik, batas maksimal fase buang sebelum balik ambil
-
-    -- Kecepatan buang sampah (burst: 1x cari tong + 1x TP, lalu tembak berturut-turut)
-    DisposeSettleDelay = 0.03,  -- jeda setelah TP ke tong sebelum mulai buang
-    DisposeFireDelay = 0.04,    -- jeda antar buang sampah di tong yang sama
-    DisposeLoopInterval = 0.1,  -- jeda antar loop selama fase BUANG (menggantikan LoopInterval)
-
-    -- Buang hanya ke tong milik kosan sendiri
-    OwnBinOnly = true,          -- true = hanya tong yang cocok dengan ID kosan / owner kita
-    DisposeFallbackRadius = 150 -- studs. Bila tidak ada tong yang cocok owner, pakai tong terdekat
-                                -- dari lokasi ambil sampah dalam radius ini. 0 = tanpa fallback
+    NoPromptLimit = 3,
+    DisposePhaseTimeout = 20,
+    DisposeSettleDelay = 0.03,
+    DisposeFireDelay = 0.04,
+    DisposeLoopInterval = 0.1,
+    OwnBinOnly = true,
+    DisposeFallbackRadius = 150
 }
 
 local TrashState = {
-    Enabled = true,         -- ikut alur sampah setelah rumah bersih
-    Phase = "BERSIH",       -- "BERSIH" > "TUNGGU" > "AMBIL" > "BUANG"
+    Enabled = true,
+    Phase = "BERSIH",
     PickupCount = 0,
     DisposeCount = 0,
     PickedSinceDispose = 0,
     DisposedThisPhase = 0,
-    ToolDetected = false,   -- true bila sampah terdeteksi sebagai Tool di Backpack
+    ToolDetected = false,
     NoticeCached = false,
-    HomePos = nil,          -- lokasi terakhir ambil sampah (jangkar kosan sendiri)
+    HomePos = nil,
     LastBinLogged = nil
 }
 
-local onTrashUpdate = function() end -- diisi oleh GUI
+local onTrashUpdate = function() end
 
 local function hasKeyword(text, list)
     for _, kw in ipairs(list) do
@@ -414,23 +397,20 @@ local function promptPosition(prompt)
     return nil
 end
 
--- Token identitas kosan sendiri (huruf kecil, minimal 4 karakter agar tidak salah cocok)
 local function ownerTokens()
     local tokens = {}
     local function add(v)
         v = string.lower(tostring(v or ""))
         if #v >= 4 and v ~= "-" then table.insert(tokens, v) end
     end
-    add(CleanState.CurrentKosanID) -- UserID_RoomID lengkap
-    add(CleanState.KosanOwner)     -- UserID pemilik
+    add(CleanState.CurrentKosanID)
+    add(CleanState.KosanOwner)
     add(LocalPlayer.UserId)
     add(LocalPlayer.Name)
     add(LocalPlayer.DisplayName)
     return tokens
 end
 
--- Apakah objek (atau salah satu parent-nya sampai Workspace) milik kosan kita?
--- Dicek lewat nama dan Attribute (mis. Owner / UserId / KosanID).
 local function isOwnedByMe(inst, tokens)
     local node = inst
     while node and node ~= Workspace and node ~= game do
@@ -474,8 +454,8 @@ local function findNearestTrashPrompt(isDispose)
     local tokens = ownOnly and ownerTokens() or nil
     local anchor = TrashState.HomePos or hrp.Position
 
-    local best, bestDist = nil, math.huge   -- terdekat (atau terdekat milik sendiri)
-    local fb, fbDist = nil, math.huge       -- cadangan: terdekat dari jangkar kosan
+    local best, bestDist = nil, math.huge
+    local fb, fbDist = nil, math.huge
 
     for _, obj in ipairs(Workspace:GetDescendants()) do
         if obj:IsA("ProximityPrompt") and obj.Enabled then
@@ -485,7 +465,6 @@ local function findNearestTrashPrompt(isDispose)
             if isDispose then
                 match = isBin
             else
-                -- Pick up: cocok "sampah" tapi BUKAN tempat sampah
                 match = (not isBin) and hasKeyword(sig, TrashConfig.PickupKeywords)
             end
 
@@ -523,7 +502,6 @@ local function findNearestTrashPrompt(isDispose)
     return best
 end
 
--- Hitung sampah yang sedang dibawa (Tool di Backpack / Character)
 local function getCarriedTrash()
     local n = 0
     local function scan(container)
@@ -539,7 +517,6 @@ local function getCarriedTrash()
     return n
 end
 
--- Cek notifikasi "penuh" yang tampil di layar
 local function guiShown(obj)
     local inst = obj
     while inst and inst ~= PlayerGui do
@@ -575,11 +552,8 @@ local function isTrashFull()
     local carried = getCarriedTrash()
     if carried > 0 then TrashState.ToolDetected = true end
 
-    -- 1) Jumlah sampah di tas mencapai kapasitas
     if carried >= TrashConfig.MaxCarry then return true end
-    -- 2) Muncul notifikasi tas penuh di layar
     if fullNoticeVisible() then return true end
-    -- 3) Cadangan (sampah bukan Tool): hitung jumlah pick up
     if not TrashState.ToolDetected and TrashState.PickedSinceDispose >= TrashConfig.MaxCarry then
         return true
     end
@@ -595,8 +569,6 @@ local function isTrashEmpty()
     return TrashState.DisposedThisPhase >= need
 end
 
--- Baca persen kebersihan rumah dari UI game (teks berisi angka + "%")
--- Return: angka 0-100, atau nil bila tidak ditemukan
 local lastPctScan = 0
 local cachedPct = nil
 local function readCleanPercent()
@@ -611,7 +583,6 @@ local function readCleanPercent()
             local text = string.lower(obj.Text)
             local num = string.match(text, "(%d+%.?%d*)%s*%%")
             if num then
-                -- Cocokkan teks + nama objek & 3 parent dengan kata kunci kebersihan
                 local parts = { text, obj.Name }
                 local inst = obj.Parent
                 for _ = 1, 3 do
@@ -631,7 +602,6 @@ local function readCleanPercent()
     return found
 end
 
--- Return: "noprompt" | "nofire" | "ok"
 local function trashStep(isDispose)
     local prompt = findNearestTrashPrompt(isDispose)
     if not prompt then return "noprompt" end
@@ -668,8 +638,6 @@ end
 local isCleanRunning = false
 local cleanThread = nil
 
--- Buang cepat: cari tong 1x, TP 1x, lalu buang semua sampah berturut-turut
--- Return: "noprompt" | "nofire" | "ok"
 local function disposeBurst()
     local prompt = findNearestTrashPrompt(true)
     if not prompt then return "noprompt" end
@@ -724,7 +692,7 @@ local function setCleanPhase(phase)
 end
 
 -- ========================================================
--- BACKGROUND WORKERS (DILENGKAPI JARAK JAUH)
+-- BACKGROUND WORKERS
 -- ========================================================
 local isPlantRunning = false
 local plantThread = nil
@@ -733,9 +701,7 @@ local function executePlantCycle()
     local activePlots = getActivePlots()
     if #activePlots == 0 then return end
 
-    -- Radius khusus Plot 4: hanya tanam plot yang berjarak <= PLOT4_RADIUS dari karakter
     local lahanName = LAHAN_CATEGORIES[currentLahanIndex] or ""
-    -- (dilewati bila Auto TP aktif, karena karakter akan teleport ke plotnya sendiri)
     if not PlantConfig.USE_TELEPORT and string.sub(lahanName, 1, 6) == "Plot 4" then
         local char = LocalPlayer.Character
         local hrp = char and char:FindFirstChild("HumanoidRootPart")
@@ -750,7 +716,7 @@ local function executePlantCycle()
         end
 
         if #activePlots == 0 then
-            task.wait(1) -- tidak ada plot dalam radius, cek lagi sebentar
+            task.wait(1)
             return
         end
     end
@@ -806,7 +772,6 @@ local function stopPlantingLoop()
 end
 
 local function cleanDirtStep(target)
-    -- Mode Jarak Jauh: Teleport ke dekat kotoran
     if CleanState.USE_TELEPORT then
         safeTeleport(target.Position)
         task.wait(0.06)
@@ -814,7 +779,6 @@ local function cleanDirtStep(target)
 
     fireCleanSignal(CleanState.CurrentKosanID)
 
-    -- Bypass jarak ProximityPrompt kotoran
     local prompt = target:FindFirstChildWhichIsA("ProximityPrompt", true)
     if prompt then
         prompt.RequiresLineOfSight = false
@@ -826,7 +790,6 @@ local function cleanDirtStep(target)
     end
 end
 
--- Alur: BERSIH (kotoran) > TUNGGU (sampah muncul) > AMBIL (sampai penuh) > BUANG > BERSIH ...
 local function startCleaningLoop()
     cleanThread = task.spawn(function()
         local noDirtStreak = 0
@@ -840,7 +803,6 @@ local function startCleaningLoop()
             local phase = TrashState.Phase
 
             if not TrashState.Enabled then
-                -- Mode sampah dimatikan: hanya bersihkan kotoran seperti biasa
                 phase = "BERSIH"
                 if TrashState.Phase ~= "BERSIH" then setCleanPhase("BERSIH") end
             end
@@ -858,7 +820,6 @@ local function startCleaningLoop()
                 else
                     noDirtStreak += 1
                     if TrashState.Enabled and noDirtStreak >= TrashConfig.CleanDoneStreak then
-                        -- Tidak ada kotoran: pastikan kebersihan sudah 100% dulu
                         local pct = TrashConfig.RequireFullClean and TrashState.CleanPercent or nil
                         local done = (pct == nil) or (pct >= 100)
 
@@ -872,7 +833,6 @@ local function startCleaningLoop()
                         if done then
                             noDirtStreak = 0
                             waitFullStart = nil
-                            -- Rumah 100% bersih -> tunggu sampah muncul
                             setCleanPhase("TUNGGU")
                         end
                     end
@@ -880,10 +840,8 @@ local function startCleaningLoop()
 
             elseif phase == "TUNGGU" then
                 if findNearestDirt() then
-                    -- Ada kotoran baru: bersihkan dulu
                     setCleanPhase("BERSIH")
                 elseif findNearestTrashPrompt(false) then
-                    -- Sampah sudah muncul: mulai ambil
                     noPromptStreak = 0
                     setCleanPhase("AMBIL")
                 end
@@ -897,12 +855,10 @@ local function startCleaningLoop()
                 local carrying = getCarriedTrash() > 0 or TrashState.PickedSinceDispose > 0
 
                 if full or (noMore and carrying) then
-                    -- Penuh (atau sampah habis tapi masih bawa) -> buang
                     noPromptStreak = 0
                     disposeStart = os.clock()
                     setCleanPhase("BUANG")
                 elseif noMore then
-                    -- Tidak ada sampah lagi dan tidak membawa apa-apa -> tunggu lagi
                     noPromptStreak = 0
                     setCleanPhase("TUNGGU")
                 end
@@ -947,10 +903,9 @@ end
 -- AUTO ACC PENYEWA
 -- ========================================================
 local TenantConfig = {
-    Interval = 1,          -- detik antar permintaan terima penyewa
-    SpinAt = 10,           -- spin gratis saat jumlah penyewa mencapai angka ini
-    SpinPollInterval = 2,  -- detik antar pengecekan jumlah penyewa
-    -- Kata kunci untuk mencari jumlah penyewa di UI / attribute (huruf kecil)
+    Interval = 1,
+    SpinAt = 10,
+    SpinPollInterval = 2,
     TenantKeywords = { "penyewa", "tenant" }
 }
 
@@ -959,16 +914,16 @@ local TenantState = {
     CallCount = 0,
     AcceptCount = 0,
     SpinEnabled = false,
-    SpinArmed = true,      -- siap spin; aktif lagi setelah jumlah penyewa turun di bawah SpinAt
-    SpinBaseline = 0,      -- cadangan: jumlah penyewa diterima yang sudah dipakai untuk spin
+    SpinArmed = true,
+    SpinBaseline = 0,
     SpinCount = 0,
-    DetectedTenants = nil, -- jumlah penyewa terdeteksi
+    DetectedTenants = nil,
     DetectSource = "-"
 }
 
 local tenantRF = nil
 local tenantThread = nil
-local onTenantUpdate = function() end -- diisi oleh GUI
+local onTenantUpdate = function() end
 
 local function getTenantRemote()
     if tenantRF and tenantRF.Parent then return tenantRF end
@@ -1001,10 +956,7 @@ local function getSpinRemote()
     return spinRF
 end
 
--- Deteksi jumlah penyewa saat ini.
--- Return: jumlah (angka), sumber ("UI" / "Attr"), atau nil bila tidak ditemukan
 local function readTenantCount()
-    -- 1) UI: teks seperti "Penyewa: 10/10" atau "Penyewa 10"
     for _, obj in ipairs(PlayerGui:GetDescendants()) do
         if (obj:IsA("TextLabel") or obj:IsA("TextButton")) and obj.Text ~= "" and guiShown(obj) then
             local text = string.lower(obj.Text)
@@ -1018,11 +970,9 @@ local function readTenantCount()
             end
 
             if hasKeyword(table.concat(parts, " "), TenantConfig.TenantKeywords) then
-                -- Format "x/y" (mis. 10/10)
                 local cur = string.match(text, "(%d+)%s*/%s*%d+")
                 if cur then return tonumber(cur), "UI" end
 
-                -- Format "penyewa: 10"
                 for _, kw in ipairs(TenantConfig.TenantKeywords) do
                     local n = string.match(text, kw .. "%D*(%d+)")
                     if n then return tonumber(n), "UI" end
@@ -1031,7 +981,6 @@ local function readTenantCount()
         end
     end
 
-    -- 2) Attribute pemain
     local okAttr, attrs = pcall(function() return LocalPlayer:GetAttributes() end)
     if okAttr and attrs then
         for name, value in pairs(attrs) do
@@ -1041,7 +990,6 @@ local function readTenantCount()
         end
     end
 
-    -- 3) leaderstats / Value di dalam pemain
     for _, child in ipairs(LocalPlayer:GetDescendants()) do
         if (child:IsA("NumberValue") or child:IsA("IntValue"))
             and hasKeyword(string.lower(child.Name), TenantConfig.TenantKeywords) then
@@ -1050,22 +998,6 @@ local function readTenantCount()
     end
 
     return nil, "-"
-end
-
-local spinRF = nil
-local function getSpinRemote()
-    if spinRF and spinRF.Parent then return spinRF end
-    pcall(function()
-        spinRF = ReplicatedStorage
-            :WaitForChild("NKSystem", 5)
-            :WaitForChild("Packages", 5)
-            :WaitForChild("Knit", 5)
-            :WaitForChild("Services", 5)
-            :WaitForChild("GachaService", 5)
-            :WaitForChild("RF", 5)
-            :WaitForChild("SpinX10WithFree", 5)
-    end)
-    return spinRF
 end
 
 local function doSpin()
@@ -1086,9 +1018,7 @@ local function doSpin()
     return ok
 end
 
--- Watcher: spin gacha otomatis saat penyewa sudah 10
 local spinWatcher = nil
-
 local function startSpinWatcher()
     if spinWatcher then return end
     spinWatcher = task.spawn(function()
@@ -1100,14 +1030,13 @@ local function startSpinWatcher()
             if count ~= nil then
                 if count >= TenantConfig.SpinAt then
                     if TenantState.SpinArmed then
-                        TenantState.SpinArmed = false -- cegah spin berulang selama penyewa masih >= 10
+                        TenantState.SpinArmed = false
                         doSpin()
                     end
                 else
-                    TenantState.SpinArmed = true -- penyewa turun: siap spin lagi saat mencapai 10
+                    TenantState.SpinArmed = true
                 end
             else
-                -- Cadangan: jumlah penyewa tidak terbaca -> hitung dari yang diterima script
                 if TenantState.AcceptCount - TenantState.SpinBaseline >= TenantConfig.SpinAt then
                     TenantState.SpinBaseline += TenantConfig.SpinAt
                     doSpin()
@@ -1136,7 +1065,7 @@ local function startTenantWorker()
             local rf = getTenantRemote()
             if rf then
                 local ok, result = pcall(function()
-                    return rf:InvokeServer(true) -- true = terima penyewa
+                    return rf:InvokeServer(true)
                 end)
                 if ok then
                     TenantState.CallCount += 1
@@ -1165,12 +1094,12 @@ local function stopTenantWorker()
 end
 
 -- ========================================================
--- ANTI-AFK (CEGAH KICK IDLE 20 MENIT)
+-- ANTI-AFK
 -- ========================================================
 local isAntiAfkRunning = false
 local antiAfkConn = nil
 local antiAfkThread = nil
-local ANTI_AFK_INTERVAL = 55 -- detik, sinyal cadangan berkala
+local ANTI_AFK_INTERVAL = 55
 
 local function antiAfkPulse()
     local ok = pcall(function()
@@ -1179,7 +1108,6 @@ local function antiAfkPulse()
     end)
 
     if not ok then
-        -- Cadangan bila VirtualUser tidak tersedia di executor
         pcall(function()
             local vim = game:GetService("VirtualInputManager")
             vim:SendMouseButtonEvent(0, 0, 1, true, game, 0)
@@ -1192,10 +1120,8 @@ end
 local function startAntiAfk()
     if antiAfkConn then return end
 
-    -- Respon saat Roblox mendeteksi karakter idle
     antiAfkConn = LocalPlayer.Idled:Connect(antiAfkPulse)
 
-    -- Sinyal cadangan berkala
     antiAfkThread = task.spawn(function()
         while isAntiAfkRunning and isScriptRunning do
             task.wait(ANTI_AFK_INTERVAL)
@@ -1217,8 +1143,9 @@ local function stopAntiAfk()
     end
 end
 
--- Semua logika ternak/traktor/kotoran/rute dibungkus satu fungsi agar tidak
--- melebihi batas 200 variabel local di tingkat atas. Antarmuka lewat tabel TernakHub.
+-- ========================================================
+-- TERNAK & TRAKTOR HUB
+-- ========================================================
 local TernakHub = (function()
     local cb = {
         traktor = function() end,
@@ -1228,18 +1155,14 @@ local TernakHub = (function()
     }
     local RunService = game:GetService("RunService")
 
-    -- ========================================================
-    -- AUTO SPAWN & MENGEMUDI TRAKTOR (TraktorService)
-    -- Dua fitur terpisah: Auto Spawn dan Auto Mengemudi punya tombol ON/OFF masing-masing
-    -- ========================================================
     local TraktorConfig = {
-        VehicleType = "Traktor",  -- argumen pertama Spawn
-        SpawnInterval = 5,        -- detik cek traktor sudah ada atau belum
-        SpawnWaitTimeout = 5,     -- detik menunggu traktor muncul setelah Spawn
-        DriveInterval = 3,        -- detik cek perlu mulai mengemudi atau tidak
-        AutoBoard = true,         -- TP ke traktor lalu duduk di kursinya sebelum MulaiMengemudi
-        BoardSettleDelay = 0.3,   -- jeda setelah TP / mencoba duduk sebelum dicek
-        BoardRetries = 3          -- jumlah percobaan naik per traktor
+        VehicleType = "Traktor",
+        SpawnInterval = 5,
+        SpawnWaitTimeout = 5,
+        DriveInterval = 3,
+        AutoBoard = true,
+        BoardSettleDelay = 0.3,
+        BoardRetries = 3
     }
 
     local TraktorState = {
@@ -1247,8 +1170,8 @@ local TernakHub = (function()
         DriveRunning = false,
         SpawnCount = 0,
         DriveCount = 0,
-        LastDrivenModel = nil,   -- traktor terakhir yang sudah dikemudikan
-        LastDrivenChar = nil     -- karakter saat itu (bila respawn, mengemudi diulang)
+        LastDrivenModel = nil,
+        LastDrivenChar = nil
     }
 
     local traktorSpawnThread = nil
@@ -1277,7 +1200,6 @@ local TernakHub = (function()
         return nil
     end
 
-    -- Traktor milik sendiri: workspace.KendaraanTraktor.Traktor_<UserId>
     local function findMyTraktor()
         local folder = Workspace:FindFirstChild("KendaraanTraktor")
         if not folder then return nil end
@@ -1295,40 +1217,35 @@ local TernakHub = (function()
         return nil
     end
 
-    -- Pengaturan rute menyetir + nama model traktor yang dikemudikan
     local RouteConfig = {
-        ModelName = "Traktor_Kotoran", -- nama/id model di workspace.KendaraanTraktor (nama persis, atau awalan + ID kita)
-        -- Profil rute (satu aktif sekali waktu karena memakai traktor yang sama):
+        ModelName = "Traktor_Kotoran",
         Profiles = {
-            { -- 1: rute awal, Kandang_1 .. Kandang_4
+            {
                 Name = "Rute",
                 KandangNames = { "Kandang_1", "Kandang_2", "Kandang_3", "Kandang_4" },
-                KandangSelected = { true, true, true, true }, -- diubah lewat tombol di tab Ternak
+                KandangSelected = { true, true, true, true },
                 PlotKeywords = {}
             },
-            { -- 2: rute Plot 8, Kandang_1 .. Kandang_8
+            {
                 Name = "Plot 8",
                 KandangNames = { "Kandang_1", "Kandang_2", "Kandang_3", "Kandang_4",
                                  "Kandang_5", "Kandang_6", "Kandang_7", "Kandang_8" },
                 KandangSelected = { true, true, true, true, true, true, true, true },
-                -- Bila nama Kandang_N sama di beberapa plot: utamakan yang berada di bawah objek
-                -- bernama mengandung kata kunci ini (huruf kecil). Hanya preferensi, bukan syarat.
                 PlotKeywords = { "plot 8", "plot_8", "plot8" }
             }
         },
-        Speed = 25,             -- studs/detik
-        TurnSpeed = 6,          -- kecepatan menghadap arah jalan (makin besar makin cepat)
-        ArriveDistance = 4,     -- jarak (studs) dianggap sudah sampai di kandang
-        DwellTime = 1.5,        -- detik berhenti di tiap kandang sebelum lanjut
-        Loop = true,            -- true = ulangi terus (kandang terakhir -> pertama)
-        StartAtNearest = true,  -- mulai dari kandang terpilih yang terdekat
-        UseTargetY = false,     -- true = ikuti Y tujuan; false = pertahankan tinggi traktor sekarang
-        HeightOffset = 0,       -- tambahan tinggi bila UseTargetY = true
-        RequireSeated = true,   -- hanya gerak bila karakter duduk di traktor (agar posisi tersinkron ke server)
-        AutoStartDrive = true   -- bila belum duduk, jalankan MulaiMengemudi otomatis (sekali per traktor)
+        Speed = 25,
+        TurnSpeed = 6,
+        ArriveDistance = 4,
+        DwellTime = 1.5,
+        Loop = true,
+        StartAtNearest = true,
+        UseTargetY = false,
+        HeightOffset = 0,
+        RequireSeated = true,
+        AutoStartDrive = true
     }
 
-    -- Traktor yang dikemudikan: milik sendiri berawalan ModelName > nama persis ModelName > Traktor_<UserId>
     local function findDriveTraktor()
         local folder = Workspace:FindFirstChild("KendaraanTraktor")
         if not folder then return nil end
@@ -1395,8 +1312,6 @@ local TernakHub = (function()
         return true
     end
 
-    -- TP ke traktor yang di-spawn lalu duduk di kursinya.
-    -- Return true bila sudah duduk (atau bila tidak ada kursi/prompt yang bisa dicek)
     local function boardTraktor(model)
         local char = LocalPlayer.Character
         local hrp = char and char:FindFirstChild("HumanoidRootPart")
@@ -1406,14 +1321,13 @@ local TernakHub = (function()
         local function seated()
             return hum.SeatPart ~= nil and hum.SeatPart:IsDescendantOf(model)
         end
-        if seated() then return true end -- sudah duduk, jangan TP (TP melepas dari kursi)
+        if seated() then return true end
 
         local seat = model:FindFirstChildWhichIsA("VehicleSeat", true) or model:FindFirstChildWhichIsA("Seat", true)
         local prompt = model:FindFirstChildWhichIsA("ProximityPrompt", true)
         local basePos = seat and seat.Position or model:GetPivot().Position
 
         if not seat and not prompt then
-            -- Kursi/prompt tidak terdeteksi: cukup TP ke traktor, sisanya ditangani MulaiMengemudi
             safeTeleport(basePos)
             task.wait(TraktorConfig.BoardSettleDelay)
             return true
@@ -1426,8 +1340,8 @@ local TernakHub = (function()
             task.wait(TraktorConfig.BoardSettleDelay)
 
             if seat then
-                pcall(function() seat:Sit(hum) end) -- bila API tersedia di executor/game
-                pcall(function() hrp.CFrame = seat.CFrame * CFrame.new(0, 2, 0) end) -- menyentuh kursi -> duduk otomatis
+                pcall(function() seat:Sit(hum) end)
+                pcall(function() hrp.CFrame = seat.CFrame * CFrame.new(0, 2, 0) end)
                 task.wait(TraktorConfig.BoardSettleDelay)
                 if seated() then break end
             end
@@ -1452,7 +1366,6 @@ local TernakHub = (function()
         return false
     end
 
-    -- Naik traktor (bila AutoBoard) lalu mulai mengemudi
     local function startDriving(model)
         if TraktorConfig.AutoBoard and not boardTraktor(model) then
             return false
@@ -1494,7 +1407,6 @@ local TernakHub = (function()
             while TraktorState.DriveRunning and isScriptRunning do
                 local model = findDriveTraktor()
                 local char = LocalPlayer.Character
-                -- Mengemudi sekali per traktor / per karakter (hindari memicu event berulang)
                 if model and char and (model ~= TraktorState.LastDrivenModel or char ~= TraktorState.LastDrivenChar) then
                     if startDriving(model) then
                         TraktorState.LastDrivenModel = model
@@ -1518,25 +1430,20 @@ local TernakHub = (function()
         end
     end
 
-
-    -- ========================================================
-    -- MASUKKAN KOTORAN KE MESIN CONVERT (ConvertService.Masukkan)
-    -- Dipanggil hanya saat memakai traktor. Tombol ON/OFF terpisah.
-    -- ========================================================
     local ConvertConfig = {
-        Interval = 3,            -- detik antar pemanggilan Masukkan
-        MinGap = 0.5,            -- jeda minimum antar pemanggilan (agar pemicu dari rute tidak menumpuk)
-        TriggerDelay = 0.3,      -- detik setelah traktor mencapai kotoran sebelum Masukkan dipicu
-        OnlyWhenDriving = true   -- true = hanya saat duduk di traktor
+        Interval = 3,
+        MinGap = 0.5,
+        TriggerDelay = 0.3,
+        OnlyWhenDriving = true
     }
 
     local ConvertState = {
         Running = false,
-        Count = 0,               -- jumlah Masukkan yang berhasil
-        Fail = 0,                -- jumlah yang ditolak/gagal
+        Count = 0,
+        Fail = 0,
         Last = 0,
         Busy = false,
-        LastSuccess = nil        -- untuk log saat hasil berubah
+        LastSuccess = nil
     }
 
     local convertThread = nil
@@ -1557,7 +1464,6 @@ local TernakHub = (function()
         return convertRF
     end
 
-    -- Sedang memakai traktor milik sendiri (duduk di kursinya)
     local function drivingNow()
         local model = findDriveTraktor()
         if not model then return false end
@@ -1579,7 +1485,6 @@ local TernakHub = (function()
         return "{" .. table.concat(parts, ", ") .. "}"
     end
 
-    -- Masukkan kotoran ke mesin convert. Return true bila server menganggap berhasil
     local function convertNow()
         if ConvertState.Busy then return false end
         if os.clock() - ConvertState.Last < ConvertConfig.MinGap then return false end
@@ -1597,8 +1502,6 @@ local TernakHub = (function()
         end)
         ConvertState.Busy = false
 
-        -- Format jawaban belum diketahui: anggap berhasil bila ada jawaban selain nil/false
-        -- dan (bila berupa tabel) field ok tidak bernilai false
         local success = okCall and result ~= nil and result ~= false
         if success and type(result) == "table" and result.ok == false then
             success = false
@@ -1645,33 +1548,27 @@ local TernakHub = (function()
         end
     end
 
-    -- ========================================================
-    -- DETEKSI KOTORAN KAMBING (SAAT MEMAKAI TRAKTOR)
-    -- Target: objek bernama "Kotoran_Kambing__Kotoran"
-    -- Kotoran yang terdeteksi didatangi lebih dulu oleh Setir Rute (bila aktif)
-    -- ========================================================
     local DungConfig = {
         TargetName = "Kotoran_Kambing__Kotoran",
-        FuzzyPrefix = "kotoran_kambing", -- cadangan bila nama persis tidak ada (mis. ada angka/ID tambahan). "" = nonaktif
-        DetectInterval = 1,   -- detik antar pemindaian
-        ArriveDistance = 4,   -- jarak (studs) traktor dianggap sudah sampai di kotoran
-        RetryCooldown = 4,    -- detik sebelum kotoran yang sama dianggap lagi
-        RequireOwned = false, -- true = hanya kotoran milik kosan sendiri
-        OnlyWhenDriving = true -- true = mendeteksi hanya saat sedang memakai traktor
+        FuzzyPrefix = "kotoran_kambing",
+        DetectInterval = 1,
+        ArriveDistance = 4,
+        RetryCooldown = 4,
+        RequireOwned = false,
+        OnlyWhenDriving = true
     }
 
     local DungState = {
         Running = false,
-        Detected = 0,         -- jumlah kotoran terdeteksi saat ini
-        Collected = 0,        -- jumlah kotoran yang sudah didatangi traktor
-        Target = nil,         -- kotoran yang sedang dituju
+        Detected = 0,
+        Collected = 0,
+        Target = nil,
         LastLogged = nil,
         Recent = {}
     }
 
     local dungThread = nil
 
-    -- Posisi umum sebuah objek (Part / Model / Attachment / Prompt / Folder)
     local function objPosition(obj)
         if obj:IsA("BasePart") then return obj.Position end
         if obj:IsA("Attachment") then return obj.WorldPosition end
@@ -1697,7 +1594,6 @@ local TernakHub = (function()
         return seat ~= nil and seat:IsDescendantOf(model)
     end
 
-    -- Pindai kotoran: milik sendiri > nama persis > terdekat dari posisi traktor
     local function scanDung(fromPos)
         local exactName = string.lower(DungConfig.TargetName)
         local prefix = DungConfig.FuzzyPrefix ~= "" and string.lower(DungConfig.FuzzyPrefix) or nil
@@ -1768,7 +1664,6 @@ local TernakHub = (function()
                         local best, count, owned = scanDung(fromPos)
                         DungState.Detected = count
 
-                        -- Pertahankan target yang sedang dituju agar tidak berpindah-pindah
                         local cur = DungState.Target
                         if not (cur and cur.Parent) then
                             DungState.Target = best
@@ -1802,13 +1697,9 @@ local TernakHub = (function()
         table.clear(DungState.Recent)
     end
 
-    -- ========================================================
-    -- AUTO SETIR TRAKTOR KE KANDANG (PILIHAN Kandang_1 .. Kandang_4)
-    -- Prioritas: kotoran terdeteksi > kandang terpilih (berurutan)
-    -- ========================================================
     local RouteState = {
         Running = false,
-        Profile = 1,            -- indeks profil rute yang aktif (RouteConfig.Profiles)
+        Profile = 1,
         KIndex = 1,
         Laps = 0,
         Finished = false,
@@ -1833,7 +1724,6 @@ local TernakHub = (function()
         return list
     end
 
-    -- Apakah salah satu parent objek bernama mengandung kata kunci plot (mis. "plot 8")?
     local function matchesPlot(obj, keywords)
         if not keywords or #keywords == 0 then return false end
         local node = obj.Parent
@@ -1847,7 +1737,6 @@ local TernakHub = (function()
         return false
     end
 
-    -- Cari kandang bernama persis (mis. "Kandang_1"): milik sendiri > cocok kata kunci plot > terdekat
     local function findKandangPos(name, fromPos)
         local lname = string.lower(name)
         local tokens = ownerTokens()
@@ -1878,7 +1767,6 @@ local TernakHub = (function()
         return bestPos
     end
 
-    -- Satu langkah gerak menuju target. Return true bila sudah sampai.
     local function stepToward(model, dt, target, arriveDist)
         local pivot = model:GetPivot()
         local pos = pivot.Position
@@ -1914,7 +1802,6 @@ local TernakHub = (function()
     local function routeTick(model)
         local pos = model:GetPivot().Position
 
-        -- Prioritas 1: kotoran yang terdeteksi
         if DungState.Running and DungState.Target then
             local obj = DungState.Target
             if obj.Parent then
@@ -1936,7 +1823,6 @@ local TernakHub = (function()
             DungState.Target = nil
         end
 
-        -- Prioritas 2: kandang terpilih secara berurutan
         local list = selectedKandangNames()
         if #list == 0 then
             if not RouteState.WarnedEmpty then
@@ -2014,7 +1900,6 @@ local TernakHub = (function()
                 if not model or not char then
                     task.wait(1)
                 else
-                    -- Belum mengemudi: mulai otomatis sekali per traktor/karakter
                     if RouteConfig.AutoStartDrive and (model ~= TraktorState.LastDrivenModel or char ~= TraktorState.LastDrivenChar) then
                         if startDriving(model) then
                             TraktorState.LastDrivenModel = model
@@ -2050,8 +1935,6 @@ local TernakHub = (function()
         end
     end
 
-    -- Nyalakan rute profil idx (mematikan profil lain), atau matikan bila profil itu sudah aktif
-    -- Return: indeks profil yang aktif, atau nil bila rute mati
     local function toggleRouteProfile(idx)
         if RouteState.Running and RouteState.Profile == idx then
             stopRouteWorker()
@@ -2093,158 +1976,147 @@ local TernakHub = (function()
 end)()
 
 -- ========================================================
--- AUTO GACHA PAKAI UANG (GachaService.SpinX10WithMoney)
--- Dibungkus satu fungsi agar tidak menambah variabel local di tingkat atas.
+-- MODUL: AUTO GACHA & AUTO BUKA BLINDBOX (GACHA HUB)
 -- ========================================================
 local GachaHub = (function()
     local GachaConfig = {
-        Interval = 1.5,        -- detik antar spin x10
-        MaxSpins = 0,          -- batas jumlah spin x10 per sesi (0 = tanpa batas)
-        StopAfterFails = 3,    -- berhenti otomatis setelah N gagal berturut-turut (mis. uang habis)
-        LogEveryResult = true  -- cetak ringkasan hasil tiap spin ke console
+        SpinInterval = 0.5,
+        ClaimInterval = 0.2,
+        MinInterval = 0.05
     }
 
     local GachaState = {
-        Running = false,
-        Spins = 0,             -- jumlah spin x10 yang berhasil (total)
-        Fails = 0,             -- jumlah yang ditolak/gagal
-        SessionSpins = 0,      -- spin berhasil sejak tombol START ditekan
-        FailStreak = 0,        -- gagal berturut-turut
-        Busy = false,
-        LastSuccess = nil
+        AutoSpinRunning = false,
+        AutoClaimRunning = false,
+        SpinCount = 0,
+        ClaimCount = 0
     }
 
-    local cb = { gacha = function() end } -- diisi oleh GUI
-    local gachaThread = nil
-    local gachaRF = nil
+    local spinRF = nil
+    local claimRF = nil
 
-    local function getGachaRemote()
-        if gachaRF and gachaRF.Parent then return gachaRF end
+    local function getRemote(name)
+        local rf = nil
         pcall(function()
-            gachaRF = ReplicatedStorage
+            rf = ReplicatedStorage
                 :WaitForChild("NKSystem", 5)
                 :WaitForChild("Packages", 5)
                 :WaitForChild("Knit", 5)
                 :WaitForChild("Services", 5)
                 :WaitForChild("GachaService", 5)
                 :WaitForChild("RF", 5)
-                :WaitForChild("SpinX10WithMoney", 5)
+                :WaitForChild(name, 5)
         end)
-        return gachaRF
+        return rf
     end
 
-    local function summarize(value, depth)
-        depth = depth or 0
-        if type(value) ~= "table" then return tostring(value) end
-        if depth >= 2 then return "{...}" end
-        local parts, n = {}, 0
-        for k, v in pairs(value) do
-            n += 1
-            if n > 8 then
-                table.insert(parts, "...")
-                break
-            end
-            table.insert(parts, tostring(k) .. "=" .. summarize(v, depth + 1))
+    local onUpdate = function() end
+
+    local function doSpin()
+        if not spinRF or not spinRF.Parent then
+            spinRF = getRemote("SpinX10WithFree")
         end
-        return "{" .. table.concat(parts, ", ") .. "}"
-    end
-
-    -- Satu spin x10 pakai uang. Return true bila server menganggap berhasil
-    local function spinOnce()
-        if GachaState.Busy then return false end
-
-        local rf = getGachaRemote()
-        if not rf then
-            warn("[Gacha] Remote GachaService.SpinX10WithMoney tidak ditemukan")
+        if not spinRF then
+            warn("[AutoGacha]: Remote GachaService.SpinX10WithFree tidak ditemukan")
             return false
         end
 
-        GachaState.Busy = true
-        local okCall, result = pcall(function()
-            return rf:InvokeServer()
+        local ok, res = pcall(function()
+            return table.pack(spinRF:InvokeServer())
         end)
-        GachaState.Busy = false
-
-        -- Format jawaban belum diketahui: berhasil bila ada jawaban selain nil/false dan
-        -- (bila tabel) field ok / success tidak bernilai false
-        local success = okCall and result ~= nil and result ~= false
-        if success and type(result) == "table" and (result.ok == false or result.success == false) then
-            success = false
-        end
-
-        if success then
-            GachaState.Spins += 1
-            GachaState.SessionSpins += 1
-            GachaState.FailStreak = 0
+        if ok then
+            GachaState.SpinCount += 1
         else
-            GachaState.Fails += 1
-            GachaState.FailStreak += 1
+            warn("[AutoGacha Error]:", res)
         end
-
-        if GachaConfig.LogEveryResult or GachaState.LastSuccess ~= success then
-            local text = okCall and summarize(result) or tostring(result)
-            if #text > 240 then text = string.sub(text, 1, 240) .. "..." end
-            if success then
-                print("[Gacha] Spin x10 OK | " .. text)
-            else
-                warn("[Gacha] Spin x10 ditolak/gagal | " .. text)
-            end
-        end
-        GachaState.LastSuccess = success
-
-        cb.gacha()
-        return success
+        return ok
     end
 
-    local function startGachaWorker()
-        if gachaThread then return end
-        GachaState.SessionSpins = 0
-        GachaState.FailStreak = 0
+    local function doClaim()
+        if not claimRF or not claimRF.Parent then
+            claimRF = getRemote("ClaimOneMultiReward")
+        end
+        if not claimRF then
+            warn("[AutoClaim]: Remote GachaService.ClaimOneMultiReward tidak ditemukan")
+            return false
+        end
 
-        gachaThread = task.spawn(function()
-            while GachaState.Running and isScriptRunning do
-                spinOnce()
+        local ok, res = pcall(function()
+            return table.pack(claimRF:InvokeServer())
+        end)
+        if ok then
+            GachaState.ClaimCount += 1
+        else
+            warn("[AutoClaim Error]:", res)
+        end
+        return ok
+    end
 
-                if GachaState.FailStreak >= GachaConfig.StopAfterFails then
-                    warn("[Gacha] Berhenti otomatis: gagal berturut-turut (uang tidak cukup?)")
-                    GachaState.Running = false
-                    break
-                end
-                if GachaConfig.MaxSpins > 0 and GachaState.SessionSpins >= GachaConfig.MaxSpins then
-                    print("[Gacha] Batas spin tercapai: " .. GachaState.SessionSpins .. " x10")
-                    GachaState.Running = false
-                    break
-                end
+    local spinThread = nil
+    local claimThread = nil
 
-                task.wait(GachaConfig.Interval)
+    local function startSpin()
+        if spinThread then return end
+        GachaState.AutoSpinRunning = true
+        spinThread = task.spawn(function()
+            while GachaState.AutoSpinRunning and isScriptRunning do
+                doSpin()
+                onUpdate()
+                task.wait(GachaConfig.SpinInterval)
             end
-            gachaThread = nil
-            cb.gacha() -- segarkan tampilan (bisa saja berhenti otomatis)
+            spinThread = nil
         end)
     end
 
-    local function stopGachaWorker()
-        GachaState.Running = false
-        if gachaThread then
-            task.cancel(gachaThread)
-            gachaThread = nil
+    local function stopSpin()
+        GachaState.AutoSpinRunning = false
+        if spinThread then
+            task.cancel(spinThread)
+            spinThread = nil
         end
-        cb.gacha()
+        onUpdate()
+    end
+
+    local function startClaim()
+        if claimThread then return end
+        GachaState.AutoClaimRunning = true
+        claimThread = task.spawn(function()
+            while GachaState.AutoClaimRunning and isScriptRunning do
+                doClaim()
+                onUpdate()
+                task.wait(GachaConfig.ClaimInterval)
+            end
+            claimThread = nil
+        end)
+    end
+
+    local function stopClaim()
+        GachaState.AutoClaimRunning = false
+        if claimThread then
+            task.cancel(claimThread)
+            claimThread = nil
+        end
+        onUpdate()
     end
 
     return {
-        cb = cb,
-        GachaConfig = GachaConfig, GachaState = GachaState,
-        spinOnce = spinOnce,
-        startGachaWorker = startGachaWorker, stopGachaWorker = stopGachaWorker,
-        stopAll = stopGachaWorker
+        Config = GachaConfig,
+        State = GachaState,
+        startSpin = startSpin,
+        stopSpin = stopSpin,
+        startClaim = startClaim,
+        stopClaim = stopClaim,
+        setOnUpdate = function(fn) onUpdate = fn end,
+        stopAll = function()
+            pcall(stopSpin)
+            pcall(stopClaim)
+        end
     }
 end)()
 
 -- ========================================================
--- HIGH-END CYBER GUI DESIGN (SMITH GANTENG)
+-- CYBER GUI DESIGN (SMITH GANTENG)
 -- ========================================================
--- Ukuran GUI sedang (menyesuaikan layar, tidak lebih kecil dari 340x445)
 local viewport = (Workspace.CurrentCamera and Workspace.CurrentCamera.ViewportSize) or Vector2.new(1280, 720)
 local WIN_WIDTH = math.clamp(400, 340, math.max(340, viewport.X - 20))
 local WIN_HEIGHT = math.clamp(500, 445, math.max(445, viewport.Y - 40))
@@ -2253,7 +2125,6 @@ local MINI_HEIGHT = 46
 local TWEEN_SMOOTH = TweenInfo.new(0.25, Enum.EasingStyle.Quart, Enum.EasingDirection.Out)
 local TWEEN_FAST   = TweenInfo.new(0.18, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
 
--- Matikan instance lama bila script dijalankan ulang
 do
     local genv = (typeof(getgenv) == "function" and getgenv()) or _G
     if genv.__IndoKostShutdown then
@@ -2267,7 +2138,6 @@ ScreenGui.Name = "IndoKostUltraHub"
 ScreenGui.ResetOnSpawn = false
 ScreenGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
 
--- Pasang GUI: gethui > CoreGui > PlayerGui (otomatis pilih yang tersedia)
 do
     if syn and typeof(syn.protect_gui) == "function" then
         pcall(syn.protect_gui, ScreenGui)
@@ -2318,9 +2188,7 @@ MainGradient.Color = ColorSequence.new({
     ColorSequenceKeypoint.new(1.0, Color3.fromRGB(11, 13, 19))
 })
 
--- ========================================================
 -- HEADER BAR
--- ========================================================
 local Header = Instance.new("Frame")
 Header.Name = "Header"
 Header.Size = UDim2.new(1, 0, 0, MINI_HEIGHT)
@@ -2335,7 +2203,6 @@ local HeaderStroke = Instance.new("UIStroke", Header)
 HeaderStroke.Color = Color3.fromRGB(38, 42, 60)
 HeaderStroke.Thickness = 1
 
--- Logo Icon Box
 local LogoBox = Instance.new("Frame")
 LogoBox.Size = UDim2.new(0, 28, 0, 28)
 LogoBox.Position = UDim2.new(0, 12, 0.5, -14)
@@ -2360,7 +2227,6 @@ LogoText.TextColor3 = Color3.fromRGB(255, 255, 255)
 LogoText.TextSize = 14
 LogoText.Parent = LogoBox
 
--- Title & Creator Subtitle (Smith Ganteng)
 local TitleLabel = Instance.new("TextLabel")
 TitleLabel.Size = UDim2.new(1, -160, 0, 18)
 TitleLabel.Position = UDim2.new(0, 48, 0, 7)
@@ -2383,7 +2249,6 @@ SubTitleLabel.TextSize = 9
 SubTitleLabel.TextXAlignment = Enum.TextXAlignment.Left
 SubTitleLabel.Parent = Header
 
--- Control Buttons (Minimize & Close)
 local HeaderControls = Instance.new("Frame")
 HeaderControls.Size = UDim2.new(0, 68, 1, 0)
 HeaderControls.Position = UDim2.new(1, -74, 0, 0)
@@ -2426,11 +2291,8 @@ local MiniBtn = createHeaderIconBtn("—", Color3.fromRGB(48, 52, 75))
 local CloseBtn = createHeaderIconBtn("✕", Color3.fromRGB(225, 29, 72), Color3.fromRGB(255, 120, 140))
 
 -- ========================================================
--- TAB BAR (PILL SEGMENTED CONTROLS)
+-- TAB BAR (6 SEGMENTS TERMASUK GACHA)
 -- ========================================================
--- Bagian UI di bawah dibungkus satu fungsi agar variabelnya tidak menumpuk di fungsi utama
--- (batas Lua/Luau: 200 variabel local per fungsi, dan sebagian executor menambah local sendiri).
-local _ = (function()
 local TabBar = Instance.new("Frame")
 TabBar.Name = "TabBar"
 TabBar.Size = UDim2.new(1, -24, 0, 36)
@@ -2447,32 +2309,33 @@ local TabListLayout = Instance.new("UIListLayout", TabBar)
 TabListLayout.FillDirection = Enum.FillDirection.Horizontal
 TabListLayout.HorizontalAlignment = Enum.HorizontalAlignment.Center
 TabListLayout.VerticalAlignment = Enum.VerticalAlignment.Center
-TabListLayout.Padding = UDim.new(0, 6)
+TabListLayout.Padding = UDim.new(0, 4)
 
 local function createTabPill(title)
     local btn = Instance.new("TextButton")
-    btn.Size = UDim2.new(1 / 6, -6, 1, -6)
+    btn.Size = UDim2.new(1 / 6, -5, 1, -6)
     btn.BackgroundColor3 = Color3.fromRGB(20, 22, 32)
     btn.BorderSizePixel = 0
     btn.Font = Enum.Font.GothamBold
     btn.Text = title
     btn.TextColor3 = Color3.fromRGB(130, 135, 155)
-    btn.TextSize = 10
+    btn.TextSize = 9
     btn.TextScaled = true
     btn.AutoButtonColor = false
     btn.Parent = TabBar
     local sizeLimit = Instance.new("UITextSizeConstraint", btn)
-    sizeLimit.MaxTextSize = 10
+    sizeLimit.MaxTextSize = 9
     sizeLimit.MinTextSize = 6
     Instance.new("UICorner", btn).CornerRadius = UDim.new(0, 6)
     return btn
 end
 
-local TabPlantBtn = createTabPill("🌱 PLANT")
-local TabCleanBtn = createTabPill("🧹 CLEAN")
+local TabPlantBtn  = createTabPill("🌱 PLANT")
+local TabCleanBtn  = createTabPill("🧹 CLEAN")
 local TabTenantBtn = createTabPill("🏠 SEWA")
-local TabAfkBtn   = createTabPill("🛡️ AFK")
+local TabAfkBtn    = createTabPill("🛡️ AFK")
 local TabTernakBtn = createTabPill("🐑 TERNAK")
+local TabGachaBtn  = createTabPill("🎁 GACHA")
 
 -- ========================================================
 -- CONTENT CONTAINER
@@ -2498,6 +2361,30 @@ local function createModernCard(parent, height, posY)
     return card
 end
 
+local function createHeroToggle(parent, name, text, posY)
+    local btn = Instance.new("TextButton")
+    btn.Name = name
+    btn.Size = UDim2.new(1, 0, 0, 42)
+    btn.Position = UDim2.new(0, 0, 1, posY)
+    btn.BackgroundColor3 = Color3.fromRGB(225, 29, 72)
+    btn.BorderSizePixel = 0
+    btn.Font = Enum.Font.GothamBold
+    btn.Text = text
+    btn.TextColor3 = Color3.fromRGB(255, 255, 255)
+    btn.TextSize = 11
+    btn.AutoButtonColor = false
+    btn.Parent = parent
+    Instance.new("UICorner", btn).CornerRadius = UDim.new(0, 10)
+
+    local grad = Instance.new("UIGradient", btn)
+    grad.Rotation = 45
+    grad.Color = ColorSequence.new({
+        ColorSequenceKeypoint.new(0, Color3.fromRGB(244, 63, 94)),
+        ColorSequenceKeypoint.new(1, Color3.fromRGB(225, 29, 72))
+    })
+    return btn, grad
+end
+
 -- ========================================================
 -- TAB 1: AUTO PLANT PAGE
 -- ========================================================
@@ -2508,7 +2395,6 @@ PlantPage.BackgroundTransparency = 1
 PlantPage.Visible = true
 PlantPage.Parent = ContentFrame
 
--- Card 1: Target Bibit & Live Status
 local PlantStatusCard = createModernCard(PlantPage, 48, 0)
 
 local PlantCardIcon = Instance.new("TextLabel")
@@ -2559,7 +2445,6 @@ PlantBadgeText.TextColor3 = Color3.fromRGB(160, 165, 185)
 PlantBadgeText.TextSize = 9
 PlantBadgeText.Parent = PlantStatusBadge
 
--- Card 2: Lahan Selector (Interactive Stepper)
 local LahanCard = createModernCard(PlantPage, 84, 54)
 
 local LahanCardTitle = Instance.new("TextLabel")
@@ -2628,7 +2513,6 @@ LahanSubInfo.TextSize = 9
 LahanSubInfo.TextXAlignment = Enum.TextXAlignment.Left
 LahanSubInfo.Parent = LahanCard
 
--- Card 3: Parameter Tanam
 local PlantConfigCard = createModernCard(PlantPage, 32, 144)
 
 local ConfigInfoLabel = Instance.new("TextLabel")
@@ -2642,7 +2526,6 @@ ConfigInfoLabel.TextSize = 9
 ConfigInfoLabel.TextXAlignment = Enum.TextXAlignment.Center
 ConfigInfoLabel.Parent = PlantConfigCard
 
--- Card 4: Toggle Auto TP (Plant)
 local PlantTpCard = createModernCard(PlantPage, 40, 182)
 
 local PlantTpLabel = Instance.new("TextLabel")
@@ -2670,7 +2553,6 @@ TpPlantBtn.AutoButtonColor = false
 TpPlantBtn.Parent = PlantTpCard
 Instance.new("UICorner", TpPlantBtn).CornerRadius = UDim.new(0, 6)
 
--- Toggle Auto Plant Hero Button
 local TogglePlantBtn = Instance.new("TextButton")
 TogglePlantBtn.Name = "TogglePlantBtn"
 TogglePlantBtn.Size = UDim2.new(1, 0, 0, 42)
@@ -2702,7 +2584,6 @@ CleanPage.BackgroundTransparency = 1
 CleanPage.Visible = false
 CleanPage.Parent = ContentFrame
 
--- Card 1: Clean Status & Room
 local CleanStatusCard = createModernCard(CleanPage, 48, 0)
 
 local CleanCardIcon = Instance.new("TextLabel")
@@ -2753,7 +2634,6 @@ CleanBadgeText.TextColor3 = Color3.fromRGB(160, 165, 185)
 CleanBadgeText.TextSize = 9
 CleanBadgeText.Parent = CleanStatusBadge
 
--- Card 2: Toggle Jarak Jauh (Auto TP Kotoran)
 local CleanTpCard = createModernCard(CleanPage, 40, 54)
 
 local CleanTpLabel = Instance.new("TextLabel")
@@ -2781,7 +2661,6 @@ TpCleanBtn.AutoButtonColor = false
 TpCleanBtn.Parent = CleanTpCard
 Instance.new("UICorner", TpCleanBtn).CornerRadius = UDim.new(0, 6)
 
--- Card 3: Modern Inputs Container
 local InputsCard = createModernCard(CleanPage, 126, 100)
 
 local function createCyberInput(name, placeholder, defaultValue, labelText, posY)
@@ -2829,7 +2708,6 @@ local IdInput     = createCyberInput("IdInput", "Contoh: UserID_RoomID", CleanSt
 local RadiusInput = createCyberInput("RadiusInput", "Jarak deteksi studs", CleanState.Radius, "RADIUS DETEKSI (STUDS):", 46)
 local LoopInput   = createCyberInput("LoopInput", "Delay loop detik", CleanState.LoopInterval, "LOOP INTERVAL (DETIK):", 86)
 
--- Card: Sampah Otomatis (Ambil + Buang) setelah rumah bersih
 do
     local trashCard = createModernCard(CleanPage, 36, 232)
 
@@ -2890,7 +2768,6 @@ do
     end))
 end
 
--- Toggle Auto Clean Hero Button
 local ToggleCleanBtn = Instance.new("TextButton")
 ToggleCleanBtn.Name = "ToggleCleanBtn"
 ToggleCleanBtn.Size = UDim2.new(1, 0, 0, 42)
@@ -2913,7 +2790,7 @@ CleanBtnGrad.Color = ColorSequence.new({
 })
 
 -- ========================================================
--- TAB 3: ANTI-AFK PAGE (TERPISAH)
+-- TAB 3: ANTI-AFK PAGE
 -- ========================================================
 local AfkPage = Instance.new("Frame")
 AfkPage.Name = "AfkPage"
@@ -2922,7 +2799,6 @@ AfkPage.BackgroundTransparency = 1
 AfkPage.Visible = false
 AfkPage.Parent = ContentFrame
 
--- Card 1: Status Anti-AFK
 local AfkStatusCard = createModernCard(AfkPage, 48, 0)
 
 local AfkCardIcon = Instance.new("TextLabel")
@@ -2973,7 +2849,6 @@ AfkBadgeText.TextColor3 = Color3.fromRGB(160, 165, 185)
 AfkBadgeText.TextSize = 9
 AfkBadgeText.Parent = AfkStatusBadge
 
--- Card 2: Info
 local AfkInfoCard = createModernCard(AfkPage, 48, 54)
 
 local AfkInfoLabel = Instance.new("TextLabel")
@@ -2988,7 +2863,6 @@ AfkInfoLabel.TextWrapped = true
 AfkInfoLabel.TextXAlignment = Enum.TextXAlignment.Center
 AfkInfoLabel.Parent = AfkInfoCard
 
--- Toggle Anti-AFK Hero Button
 local ToggleAfkBtn = Instance.new("TextButton")
 ToggleAfkBtn.Name = "ToggleAfkBtn"
 ToggleAfkBtn.Size = UDim2.new(1, 0, 0, 42)
@@ -3010,34 +2884,8 @@ AfkBtnGrad.Color = ColorSequence.new({
     ColorSequenceKeypoint.new(1, Color3.fromRGB(225, 29, 72))
 })
 
--- Helper tombol START/STOP besar (dipakai tab Penyewa)
-local function createHeroToggle(parent, name, text, posY)
-    local btn = Instance.new("TextButton")
-    btn.Name = name
-    btn.Size = UDim2.new(1, 0, 0, 42)
-    btn.Position = UDim2.new(0, 0, 1, posY)
-    btn.BackgroundColor3 = Color3.fromRGB(225, 29, 72)
-    btn.BorderSizePixel = 0
-    btn.Font = Enum.Font.GothamBold
-    btn.Text = text
-    btn.TextColor3 = Color3.fromRGB(255, 255, 255)
-    btn.TextSize = 11
-    btn.AutoButtonColor = false
-    btn.Parent = parent
-    Instance.new("UICorner", btn).CornerRadius = UDim.new(0, 10)
-
-    local grad = Instance.new("UIGradient", btn)
-    grad.Rotation = 45
-    grad.Color = ColorSequence.new({
-        ColorSequenceKeypoint.new(0, Color3.fromRGB(244, 63, 94)),
-        ColorSequenceKeypoint.new(1, Color3.fromRGB(225, 29, 72))
-    })
-    return btn, grad
-end
-
-
 -- ========================================================
--- TAB: AUTO ACC PENYEWA (TOMBOL TERPISAH)
+-- TAB 4: AUTO ACC PENYEWA PAGE
 -- ========================================================
 local TenantPage = Instance.new("Frame")
 TenantPage.Name = "TenantPage"
@@ -3171,7 +3019,7 @@ do
 end
 
 -- ========================================================
--- TERNAK PAGE (TRAKTOR, KOTORAN, RUTE KANDANG)
+-- TAB 5: TERNAK PAGE
 -- ========================================================
 local TernakPage = Instance.new("Frame")
 TernakPage.Name = "TernakPage"
@@ -3188,13 +3036,10 @@ local function buildTernakPage()
     local startTraktorDriveWorker, stopTraktorDriveWorker = H.startTraktorDriveWorker, H.stopTraktorDriveWorker
     local DungState, startDungWorker, stopDungWorker = H.DungState, H.startDungWorker, H.stopDungWorker
     local RouteConfig, RouteState = H.RouteConfig, H.RouteState
-    local startRouteWorker, stopRouteWorker = H.startRouteWorker, H.stopRouteWorker
     local toggleRouteProfile = H.toggleRouteProfile
 
-    -- Card: tombol terpisah Auto Spawn Traktor & Auto Mengemudi
     local traktorCard = createModernCard(TernakPage, 76, 0)
 
-    -- Grid 2 kolom x 2 baris: tiap fitur punya tombol ON/OFF sendiri
     local function makeSwitchRow(col, row, labelText)
         local posY = 4 + row * 24
 
@@ -3236,7 +3081,6 @@ local function buildTernakPage()
     local routeLbl, routeBtn = makeSwitchRow(0, 1, "🛞 Setir Rute")
     local dungLbl, dungBtn = makeSwitchRow(1, 1, "🔍 Deteksi Kotoran")
 
-    -- Pilihan kandang tujuan (bisa pilih lebih dari satu)
     local prof1 = RouteConfig.Profiles[1]
     for i, kName in ipairs(prof1.KandangNames) do
         local kBtn = Instance.new("TextButton")
@@ -3260,7 +3104,6 @@ local function buildTernakPage()
         table.insert(Connections, kBtn.Activated:Connect(function()
             prof1.KandangSelected[i] = not prof1.KandangSelected[i]
             paintKandang()
-            -- Hitung ulang segmen rute dengan pilihan baru (bila profil ini yang aktif)
             if RouteState.Profile == 1 then
                 RouteState.KandangPos = nil
                 RouteState.Finished = false
@@ -3308,7 +3151,6 @@ local function buildTernakPage()
         end
     end))
 
-    -- Card: Masukkan kotoran ke mesin convert (hanya saat memakai traktor)
     local convertCard = createModernCard(TernakPage, 30, 82)
 
     local convertLbl = Instance.new("TextLabel")
@@ -3350,7 +3192,6 @@ local function buildTernakPage()
         end
     end))
 
-    -- Card: Rute Plot 8 (Kandang_1 .. Kandang_8), terpisah dari rute awal
     local plot8Card = createModernCard(TernakPage, 76, 118)
     local prof2 = RouteConfig.Profiles[2]
 
@@ -3379,7 +3220,6 @@ local function buildTernakPage()
     plot8Btn.Parent = plot8Card
     Instance.new("UICorner", plot8Btn).CornerRadius = UDim.new(0, 6)
 
-    -- Pilihan Kandang 1..8 (2 baris x 4 kolom)
     for i, kName in ipairs(prof2.KandangNames) do
         local col = (i - 1) % 4
         local row = math.floor((i - 1) / 4)
@@ -3413,7 +3253,6 @@ local function buildTernakPage()
         end))
     end
 
-    -- Label + tombol kedua rute mengikuti profil yang aktif (hanya satu yang bisa ON)
     H.cb.route = function()
         local active = RouteState.Running and RouteState.Profile or nil
         routeLbl.Text = active == 1 and string.format("🛞 Setir Rute (%d putaran)", RouteState.Laps) or "🛞 Setir Rute"
@@ -3440,27 +3279,27 @@ end
 buildTernakPage()
 
 -- ========================================================
--- GACHA PAGE (AUTO GACHA PAKAI UANG)
+-- TAB 6: AUTO GACHA & BLINDBOX PAGE
 -- ========================================================
-local GachaPage = (function()
+local GachaPage = Instance.new("Frame")
+GachaPage.Name = "GachaPage"
+GachaPage.Size = UDim2.new(1, 0, 1, 0)
+GachaPage.BackgroundTransparency = 1
+GachaPage.Visible = false
+GachaPage.Parent = ContentFrame
+
+local function buildGachaPage()
     local G = GachaHub
-    local GachaConfig, GachaState = G.GachaConfig, G.GachaState
+    local GState, GConfig = G.State, G.Config
 
-    local page = Instance.new("Frame")
-    page.Name = "GachaPage"
-    page.Size = UDim2.new(1, 0, 1, 0)
-    page.BackgroundTransparency = 1
-    page.Visible = false
-    page.Parent = ContentFrame
-
-    local statusCard = createModernCard(page, 48, 0)
+    local statusCard = createModernCard(GachaPage, 48, 0)
 
     local icon = Instance.new("TextLabel")
     icon.Size = UDim2.new(0, 24, 0, 24)
     icon.Position = UDim2.new(0, 12, 0.5, -12)
     icon.BackgroundTransparency = 1
     icon.Font = Enum.Font.GothamBold
-    icon.Text = "🎰"
+    icon.Text = "🎁"
     icon.TextSize = 16
     icon.Parent = statusCard
 
@@ -3469,7 +3308,7 @@ local GachaPage = (function()
     title.Position = UDim2.new(0, 42, 0, 8)
     title.BackgroundTransparency = 1
     title.Font = Enum.Font.GothamBold
-    title.Text = "Auto Gacha (Pakai Uang) x10"
+    title.Text = "Auto Gacha & Blindbox"
     title.TextColor3 = Color3.fromRGB(240, 240, 250)
     title.TextSize = 11
     title.TextXAlignment = Enum.TextXAlignment.Left
@@ -3480,10 +3319,9 @@ local GachaPage = (function()
     sub.Position = UDim2.new(0, 42, 0, 25)
     sub.BackgroundTransparency = 1
     sub.Font = Enum.Font.Gotham
-    sub.Text = "Spin x10: 0 | Gagal: 0 | Tarikan: 0"
+    sub.Text = "Spin: 0x | Buka: 0x"
     sub.TextColor3 = Color3.fromRGB(140, 145, 165)
     sub.TextSize = 10
-    sub.TextTruncate = Enum.TextTruncate.AtEnd
     sub.TextXAlignment = Enum.TextXAlignment.Left
     sub.Parent = statusCard
 
@@ -3499,142 +3337,146 @@ local GachaPage = (function()
     badgeText.Size = UDim2.new(1, 0, 1, 0)
     badgeText.BackgroundTransparency = 1
     badgeText.Font = Enum.Font.GothamBold
-    badgeText.Text = "● OFF"
+    badgeText.Text = "● IDLE"
     badgeText.TextColor3 = Color3.fromRGB(160, 165, 185)
     badgeText.TextSize = 9
     badgeText.Parent = badge
 
-    -- Card input: jeda & batas spin
-    local inputsCard = createModernCard(page, 90, 54)
+    -- Card Setting Interval Delays
+    local settingsCard = createModernCard(GachaPage, 84, 54)
 
-    local function makeInput(name, placeholder, defaultValue, labelText, posY)
+    local settingsTitle = Instance.new("TextLabel")
+    settingsTitle.Size = UDim2.new(1, -24, 0, 14)
+    settingsTitle.Position = UDim2.new(0, 12, 0, 6)
+    settingsTitle.BackgroundTransparency = 1
+    settingsTitle.Font = Enum.Font.GothamBold
+    settingsTitle.Text = "PENGATURAN INTERVAL DELAY (DETIK)"
+    settingsTitle.TextColor3 = Color3.fromRGB(99, 102, 241)
+    settingsTitle.TextSize = 9
+    settingsTitle.TextXAlignment = Enum.TextXAlignment.Left
+    settingsTitle.Parent = settingsCard
+
+    local function makeDelayBox(col, labelText, defaultVal)
         local lbl = Instance.new("TextLabel")
-        lbl.Size = UDim2.new(1, -24, 0, 12)
-        lbl.Position = UDim2.new(0, 12, 0, posY)
+        lbl.Size = UDim2.new(0.5, -16, 0, 14)
+        lbl.Position = UDim2.new(col * 0.5, 12, 0, 24)
         lbl.BackgroundTransparency = 1
         lbl.Font = Enum.Font.GothamBold
         lbl.Text = labelText
-        lbl.TextColor3 = Color3.fromRGB(99, 102, 241)
+        lbl.TextColor3 = Color3.fromRGB(200, 205, 225)
         lbl.TextSize = 8
         lbl.TextXAlignment = Enum.TextXAlignment.Left
-        lbl.Parent = inputsCard
+        lbl.Parent = settingsCard
 
         local box = Instance.new("TextBox")
-        box.Name = name
-        box.Size = UDim2.new(1, -24, 0, 24)
-        box.Position = UDim2.new(0, 12, 0, posY + 14)
+        box.Size = UDim2.new(0.5, -16, 0, 26)
+        box.Position = UDim2.new(col * 0.5, 12, 0, 42)
         box.BackgroundColor3 = Color3.fromRGB(15, 16, 24)
         box.BorderSizePixel = 0
         box.TextColor3 = Color3.fromRGB(240, 240, 250)
-        box.Text = tostring(defaultValue)
-        box.PlaceholderText = placeholder
-        box.PlaceholderColor3 = Color3.fromRGB(100, 105, 125)
+        box.Text = tostring(defaultVal)
         box.Font = Enum.Font.Gotham
         box.TextSize = 10
         box.ClearTextOnFocus = false
-        box.Parent = inputsCard
+        box.Parent = settingsCard
         Instance.new("UICorner", box).CornerRadius = UDim.new(0, 5)
         local bStroke = Instance.new("UIStroke", box)
         bStroke.Color = Color3.fromRGB(42, 46, 66)
         bStroke.Thickness = 1
 
-        table.insert(Connections, box.Focused:Connect(function()
+        box.Focused:Connect(function()
             TweenService:Create(bStroke, TWEEN_FAST, { Color = Color3.fromRGB(99, 102, 241) }):Play()
-        end))
-        table.insert(Connections, box.FocusLost:Connect(function()
+        end)
+        box.FocusLost:Connect(function()
             TweenService:Create(bStroke, TWEEN_FAST, { Color = Color3.fromRGB(42, 46, 66) }):Play()
-        end))
+        end)
         return box
     end
 
-    local IntervalInput = makeInput("GachaIntervalInput", "Detik antar spin", GachaConfig.Interval, "JEDA ANTAR SPIN (DETIK):", 4)
-    local MaxInput = makeInput("GachaMaxInput", "0 = tanpa batas", GachaConfig.MaxSpins, "BATAS SPIN x10 PER SESI (0 = TANPA BATAS):", 46)
+    local spinInput = makeDelayBox(0, "Delay Gacha (detik):", GConfig.SpinInterval)
+    local claimInput = makeDelayBox(1, "Delay Buka (detik):", GConfig.ClaimInterval)
 
-    table.insert(Connections, IntervalInput.FocusLost:Connect(function()
-        local n = tonumber(IntervalInput.Text)
-        if n then
-            GachaConfig.Interval = math.clamp(n, 0.2, 60)
-        end
-        IntervalInput.Text = tostring(GachaConfig.Interval)
+    table.insert(Connections, spinInput.FocusLost:Connect(function()
+        local val = tonumber(spinInput.Text)
+        GConfig.SpinInterval = (val and val >= GConfig.MinInterval) and val or 0.5
+        spinInput.Text = tostring(GConfig.SpinInterval)
     end))
 
-    table.insert(Connections, MaxInput.FocusLost:Connect(function()
-        local n = tonumber(MaxInput.Text)
-        if n then
-            GachaConfig.MaxSpins = math.max(0, math.floor(n))
-        end
-        MaxInput.Text = tostring(GachaConfig.MaxSpins)
+    table.insert(Connections, claimInput.FocusLost:Connect(function()
+        local val = tonumber(claimInput.Text)
+        GConfig.ClaimInterval = (val and val >= GConfig.MinInterval) and val or 0.2
+        claimInput.Text = tostring(GConfig.ClaimInterval)
     end))
 
-    -- Tombol: spin sekali & auto
-    local spinBtn, spinGrad = createHeroToggle(page, "GachaSpinNowBtn", "🎰  SPIN X10 SEKARANG", -92)
-    spinGrad.Color = ColorSequence.new({
-        ColorSequenceKeypoint.new(0, Color3.fromRGB(99, 102, 241)),
-        ColorSequenceKeypoint.new(1, Color3.fromRGB(59, 130, 246))
-    })
+    -- Info Card
+    local infoCard = createModernCard(GachaPage, 46, 144)
+    local infoLabel = Instance.new("TextLabel")
+    infoLabel.Size = UDim2.new(1, -20, 1, 0)
+    infoLabel.Position = UDim2.new(0, 10, 0, 0)
+    infoLabel.BackgroundTransparency = 1
+    infoLabel.Font = Enum.Font.GothamMedium
+    infoLabel.Text = "⚡ SpinX10WithFree: Gacha 10x blindbox otomatis\n📦 ClaimOneMultiReward: Buka semua hasil blindbox"
+    infoLabel.TextColor3 = Color3.fromRGB(150, 155, 175)
+    infoLabel.TextSize = 9
+    infoLabel.TextWrapped = true
+    infoLabel.Parent = infoCard
 
-    local toggleBtn, toggleGrad = createHeroToggle(page, "ToggleGachaBtn", "▶  START AUTO GACHA", -44)
+    -- Hero Buttons
+    local spinBtn, spinGrad = createHeroToggle(GachaPage, "ToggleGachaSpinBtn", "▶  START AUTO GACHA 10X (BLINDBOX)", -92)
+    local claimBtn, claimGrad = createHeroToggle(GachaPage, "ToggleGachaClaimBtn", "▶  START AUTO BUKA BLINDBOX", -44)
 
-    local function paintRunning()
-        if GachaState.Running then
-            toggleGrad.Color = ColorSequence.new({
+    local function updateStatusUI()
+        sub.Text = string.format("Spin: %dx | Buka: %dx", GState.SpinCount, GState.ClaimCount)
+        local anyRunning = GState.AutoSpinRunning or GState.AutoClaimRunning
+        badgeText.Text = anyRunning and "● ACTIVE" or "● IDLE"
+        badgeText.TextColor3 = anyRunning and Color3.fromRGB(52, 211, 153) or Color3.fromRGB(160, 165, 185)
+        badge.BackgroundColor3 = anyRunning and Color3.fromRGB(20, 45, 35) or Color3.fromRGB(30, 33, 46)
+    end
+
+    G.setOnUpdate(updateStatusUI)
+
+    table.insert(Connections, spinBtn.Activated:Connect(function()
+        if not GState.AutoSpinRunning then
+            spinGrad.Color = ColorSequence.new({
                 ColorSequenceKeypoint.new(0, Color3.fromRGB(52, 211, 153)),
                 ColorSequenceKeypoint.new(1, Color3.fromRGB(16, 185, 129))
             })
-            toggleBtn.Text = "■  STOP AUTO GACHA (RUNNING)"
-            badgeText.Text = "● ACTIVE"
-            badgeText.TextColor3 = Color3.fromRGB(52, 211, 153)
-            badge.BackgroundColor3 = Color3.fromRGB(20, 45, 35)
+            spinBtn.Text = "■  STOP AUTO GACHA 10X (RUNNING)"
+            G.startSpin()
         else
-            toggleGrad.Color = ColorSequence.new({
+            spinGrad.Color = ColorSequence.new({
                 ColorSequenceKeypoint.new(0, Color3.fromRGB(244, 63, 94)),
                 ColorSequenceKeypoint.new(1, Color3.fromRGB(225, 29, 72))
             })
-            toggleBtn.Text = "▶  START AUTO GACHA"
-            badgeText.Text = "● OFF"
-            badgeText.TextColor3 = Color3.fromRGB(160, 165, 185)
-            badge.BackgroundColor3 = Color3.fromRGB(30, 33, 46)
+            spinBtn.Text = "▶  START AUTO GACHA 10X (BLINDBOX)"
+            G.stopSpin()
         end
-    end
+        updateStatusUI()
+    end))
 
-    G.cb.gacha = function()
-        sub.Text = string.format("Spin x10: %d | Gagal: %d | Tarikan: %d",
-            GachaState.Spins, GachaState.Fails, GachaState.Spins * 10)
-        paintRunning()
-    end
-
-    table.insert(Connections, toggleBtn.Activated:Connect(function()
-        GachaState.Running = not GachaState.Running
-        if GachaState.Running then
-            G.startGachaWorker()
+    table.insert(Connections, claimBtn.Activated:Connect(function()
+        if not GState.AutoClaimRunning then
+            claimGrad.Color = ColorSequence.new({
+                ColorSequenceKeypoint.new(0, Color3.fromRGB(52, 211, 153)),
+                ColorSequenceKeypoint.new(1, Color3.fromRGB(16, 185, 129))
+            })
+            claimBtn.Text = "■  STOP AUTO BUKA BLINDBOX (RUNNING)"
+            G.startClaim()
         else
-            G.stopGachaWorker()
+            claimGrad.Color = ColorSequence.new({
+                ColorSequenceKeypoint.new(0, Color3.fromRGB(244, 63, 94)),
+                ColorSequenceKeypoint.new(1, Color3.fromRGB(225, 29, 72))
+            })
+            claimBtn.Text = "▶  START AUTO BUKA BLINDBOX"
+            G.stopClaim()
         end
-        paintRunning()
+        updateStatusUI()
     end))
-
-    local SPIN_NOW_TEXT = "🎰  SPIN X10 SEKARANG"
-    local spinBusy = false
-    table.insert(Connections, spinBtn.Activated:Connect(function()
-        if spinBusy then return end
-        spinBusy = true
-        task.spawn(function()
-            spinBtn.Text = "⏳  MEMUTAR..."
-            local ok = G.spinOnce()
-            if isScriptRunning then
-                spinBtn.Text = ok and "✔  BERHASIL" or "✖  GAGAL / DITOLAK"
-                task.wait(1.2)
-                spinBtn.Text = SPIN_NOW_TEXT
-            end
-            spinBusy = false
-        end)
-    end))
-
-    return page
-end)()
+end
+buildGachaPage()
 
 -- ========================================================
--- FOOTER BAR (CREDIT: SMITH GANTENG)
+-- FOOTER BAR
 -- ========================================================
 local Footer = Instance.new("Frame")
 Footer.Name = "Footer"
@@ -3658,20 +3500,20 @@ FooterLabel.TextSize = 10
 FooterLabel.Parent = Footer
 
 -- ========================================================
--- TAB SWITCHING ANIMATION
+-- TAB SWITCHING
 -- ========================================================
-local TAB_ACTIVE_BG   = Color3.fromRGB(38, 42, 62)
-local TAB_INACTIVE_BG = Color3.fromRGB(20, 22, 32)
-local TAB_ACTIVE_TXT  = Color3.fromRGB(255, 255, 255)
+local TAB_ACTIVE_BG    = Color3.fromRGB(38, 42, 62)
+local TAB_INACTIVE_BG  = Color3.fromRGB(20, 22, 32)
+local TAB_ACTIVE_TXT   = Color3.fromRGB(255, 255, 255)
 local TAB_INACTIVE_TXT = Color3.fromRGB(130, 135, 155)
 
 local TAB_MAP = {
-    Plant = { page = PlantPage, btn = TabPlantBtn },
-    Clean = { page = CleanPage, btn = TabCleanBtn },
+    Plant  = { page = PlantPage,  btn = TabPlantBtn },
+    Clean  = { page = CleanPage,  btn = TabCleanBtn },
     Tenant = { page = TenantPage, btn = TabTenantBtn },
-    Afk   = { page = AfkPage,   btn = TabAfkBtn },
+    Afk    = { page = AfkPage,    btn = TabAfkBtn },
     Ternak = { page = TernakPage, btn = TabTernakBtn },
-    Gacha = { page = GachaPage, btn = createTabPill("🎰 GACHA") },
+    Gacha  = { page = GachaPage,  btn = TabGachaBtn },
 }
 
 local function switchTab(tab)
@@ -3685,7 +3527,6 @@ local function switchTab(tab)
     end
 end
 
--- Default active tab
 switchTab("Plant")
 
 table.insert(Connections, TabPlantBtn.Activated:Connect(function() switchTab("Plant") end))
@@ -3693,13 +3534,11 @@ table.insert(Connections, TabCleanBtn.Activated:Connect(function() switchTab("Cl
 table.insert(Connections, TabTenantBtn.Activated:Connect(function() switchTab("Tenant") end))
 table.insert(Connections, TabAfkBtn.Activated:Connect(function() switchTab("Afk") end))
 table.insert(Connections, TabTernakBtn.Activated:Connect(function() switchTab("Ternak") end))
-table.insert(Connections, TAB_MAP.Gacha.btn.Activated:Connect(function() switchTab("Gacha") end))
+table.insert(Connections, TabGachaBtn.Activated:Connect(function() switchTab("Gacha") end))
 
 -- ========================================================
--- LOGIC HANDLERS & ANIMATIONS
+-- LOGIC HANDLERS
 -- ========================================================
-
--- Update Lahan Stepper UI
 local function updateLahanDisplay()
     local name = LAHAN_CATEGORIES[currentLahanIndex]
     local plots = LAHAN_PRESETS[name] or {}
@@ -3725,7 +3564,6 @@ table.insert(Connections, LahanDisplayBtn.Activated:Connect(function()
     updateLahanDisplay()
 end))
 
--- Toggle Auto TP Button (Plant)
 table.insert(Connections, TpPlantBtn.Activated:Connect(function()
     PlantConfig.USE_TELEPORT = not PlantConfig.USE_TELEPORT
     local col = PlantConfig.USE_TELEPORT and Color3.fromRGB(16, 185, 129) or Color3.fromRGB(45, 48, 65)
@@ -3733,7 +3571,6 @@ table.insert(Connections, TpPlantBtn.Activated:Connect(function()
     TpPlantBtn.Text = PlantConfig.USE_TELEPORT and "ON" or "OFF"
 end))
 
--- Toggle Jarak Jauh Button (Clean)
 table.insert(Connections, TpCleanBtn.Activated:Connect(function()
     CleanState.USE_TELEPORT = not CleanState.USE_TELEPORT
     local col = CleanState.USE_TELEPORT and Color3.fromRGB(16, 185, 129) or Color3.fromRGB(45, 48, 65)
@@ -3741,7 +3578,6 @@ table.insert(Connections, TpCleanBtn.Activated:Connect(function()
     TpCleanBtn.Text = CleanState.USE_TELEPORT and "ON" or "OFF"
 end))
 
--- Input Listeners for Clean
 table.insert(Connections, IdInput.FocusLost:Connect(function()
     CleanState.CurrentKosanID = IdInput.Text
     local o, r = parseKosanID(IdInput.Text)
@@ -3761,7 +3597,6 @@ table.insert(Connections, LoopInput.FocusLost:Connect(function()
     LoopInput.Text = tostring(CleanState.LoopInterval)
 end))
 
--- Toggle Plant Button Logic
 table.insert(Connections, TogglePlantBtn.Activated:Connect(function()
     isPlantRunning = not isPlantRunning
 
@@ -3788,7 +3623,6 @@ table.insert(Connections, TogglePlantBtn.Activated:Connect(function()
     end
 end))
 
--- Toggle Clean Button Logic
 table.insert(Connections, ToggleCleanBtn.Activated:Connect(function()
     isCleanRunning = not isCleanRunning
 
@@ -3815,7 +3649,6 @@ table.insert(Connections, ToggleCleanBtn.Activated:Connect(function()
     end
 end))
 
--- Toggle Anti-AFK Button Logic
 table.insert(Connections, ToggleAfkBtn.Activated:Connect(function()
     isAntiAfkRunning = not isAntiAfkRunning
 
@@ -3842,7 +3675,7 @@ table.insert(Connections, ToggleAfkBtn.Activated:Connect(function()
     end
 end))
 
--- Minimize & Restore Window Animation
+-- Minimize & Restore
 local isMinimized = false
 table.insert(Connections, MiniBtn.Activated:Connect(function()
     isMinimized = not isMinimized
@@ -3858,8 +3691,7 @@ table.insert(Connections, MiniBtn.Activated:Connect(function()
     }):Play()
 end))
 
--- Drag window manual (support mouse & touch di semua executor)
-end)()
+-- Dragging System
 do
     local dragging = false
     local dragInput, dragStart, startPos
