@@ -1,4 +1,17 @@
-
+--[[
+    ╔═══════════════════════════════════════════════════════════════╗
+    ║                 ⚡ INDO-KOST ULTRA HUB v2.5 ⚡                 ║
+    ║                    👑 SMITH GANTENG 👑                        ║
+    ║       Modern Cyber Dark Edition - All-In-One Automation       ║
+    ║  - Auto Plant: Multi-Plot Selection + Auto TP ke Plot         ║
+    ║  - Auto Clean: Remote Signal + Auto Prompt + TP Jarak Jauh    ║
+    ║  - Anti-AFK: Cegah Kick Idle 20 Menit (Tombol Terpisah)       ║
+    ║  - Alur Clean: Bersih > Tunggu Sampah > Ambil > Buang         ║
+    ║  - Kompatibel multi-executor (fallback otomatis)              ║
+    ║  - Auto Acc Penyewa + Spin Gratis saat 10 Penyewa (Terpisah)  ║
+    ║  - High-End Glassmorphism UI with UIGradient & Micro-Tweens   ║
+    ╚═══════════════════════════════════════════════════════════════╝
+--]]
 
 -- SERVICES
 local Players = game:GetService("Players")
