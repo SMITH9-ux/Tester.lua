@@ -1,5 +1,4 @@
 
-
 -- SERVICES
 local Players = game:GetService("Players")
 local Workspace = game:GetService("Workspace")
@@ -1537,11 +1536,7 @@ local TernakHub = (function()
         Slots = { 1, 2 },        -- argumen IsiPakan untuk tombol Auto Kasih Pakan (berkala)
         Interval = 5,            -- detik antar siklus (berkala)
         CallDelay = 0.3,         -- detik antar pemanggilan IsiPakan
-
-        -- Urutan isi: palung 1 diisi sampai FillThreshold, baru pindah ke palung 2
-        FillThreshold = 85,      -- batas tingkat isi (%) sebelum pindah ke palung berikutnya
-        MaxFillCalls = 6,        -- maksimal panggilan IsiPakan per palung dalam satu kali isi
-        LevelField = "stok",     -- field jawaban IsiPakan yang berisi tingkat isi palung (dugaan dari log)
+        CallsPerStop = 1,        -- jumlah IsiPakan tiap kali tiba di palung (Rute Pakan)
 
         -- Tunggu habis baru isi: IsiPakan hanya dipanggil bila palung terdeteksi kosong
         WaitUntilEmpty = false,  -- ON: isi hanya saat palung habis (default OFF, semua fitur Ternak mulai OFF)
@@ -1559,7 +1554,6 @@ local TernakHub = (function()
         LastNama = "-",
         Busy = false,
         Status = {},             -- status terakhir per slot: "empty" | "filled" | "unknown"
-        Levels = {},             -- tingkat isi terakhir per slot (dari jawaban IsiPakan)
         StatusLog = {},          -- untuk mencatat perubahan status di console
         LastFill = {},           -- waktu isi berhasil terakhir per slot
         LastProbe = {}           -- waktu percobaan terakhir saat status tak terbaca
@@ -1755,13 +1749,13 @@ local TernakHub = (function()
         return false
     end
 
-    -- IsiPakan:InvokeServer(slot). Return true bila server menjawab ok = true, dan tingkat isi palung (bila ada)
+    -- IsiPakan:InvokeServer(slot). Return true bila server menjawab ok = true
     local function feedSlot(slot)
-        if PakanState.Busy then return false, nil end
+        if PakanState.Busy then return false end
         local rf = getPakanRemote()
         if not rf then
             warn("[Pakan] Remote TernakService.IsiPakan tidak ditemukan")
-            return false, nil
+            return false
         end
 
         PakanState.Busy = true
@@ -1774,12 +1768,10 @@ local TernakHub = (function()
             PakanState.Fill += 1
             PakanState.LastStok = result.stok
             PakanState.LastNama = tostring(result.nama or "-")
-            local level = tonumber(result[PakanConfig.LevelField])
-            PakanState.Levels[slot] = level
             print(string.format("[Pakan] IsiPakan(%s) OK | %s stok: %s | jumlah: %s",
                 tostring(slot), PakanState.LastNama, tostring(result.stok), tostring(result.jumlah)))
             cb.pakan()
-            return true, level
+            return true
         end
 
         PakanState.Skip += 1
@@ -1790,32 +1782,16 @@ local TernakHub = (function()
             PakanState.LastStok = result.stok
         end
         cb.pakan()
-        return false, nil
+        return false
     end
 
-    -- Isi satu palung sampai tingkat isinya mencapai FillThreshold (default 85%), lalu selesai
-    -- (pemanggil pindah ke palung berikutnya). Hanya mulai bila perlu (palung habis bila WaitUntilEmpty ON).
-    -- Return: sudahDicoba, tingkatTerakhir
-    local function feedUntilThreshold(slot, palungName)
-        if not shouldFeed(slot, palungName) then return false, nil end
-
-        local level, prev = nil, nil
-        for _ = 1, PakanConfig.MaxFillCalls do
-            if not isScriptRunning then break end
-            local ok, lv = feedSlot(slot)
-            if not ok then break end
-            PakanState.LastFill[slot] = os.clock()
-            level = lv
-            -- tingkat isi tidak terbaca (field tidak ada): satu panggilan dianggap cukup
-            -- sudah mencapai batas: selesai
-            if level == nil or level >= PakanConfig.FillThreshold then break end
-            -- tidak ada kemajuan: hentikan agar tidak memanggil sia-sia
-            if prev and level <= prev then break end
-            prev = level
-            task.wait(PakanConfig.CallDelay)
-        end
-        cb.pakan()
-        return true, level
+    -- Isi pakan hanya bila perlu (palung habis bila WaitUntilEmpty ON)
+    -- Return: sudahDicoba, berhasil
+    local function feedSlotIfNeeded(slot, palungName)
+        if not shouldFeed(slot, palungName) then return false, false end
+        local ok = feedSlot(slot)
+        if ok then PakanState.LastFill[slot] = os.clock() end
+        return true, ok
     end
 
     local function startPakanWorker()
@@ -1824,7 +1800,7 @@ local TernakHub = (function()
             while PakanState.Running and isScriptRunning do
                 for _, slot in ipairs(PakanConfig.Slots) do
                     if not (PakanState.Running and isScriptRunning) then break end
-                    local attempted = feedUntilThreshold(slot)
+                    local attempted = feedSlotIfNeeded(slot)
                     if attempted then task.wait(PakanConfig.CallDelay) end
                 end
                 task.wait(PakanConfig.WaitUntilEmpty and PakanConfig.CheckInterval or PakanConfig.Interval)
@@ -2504,7 +2480,11 @@ local TernakHub = (function()
             if prof and prof.FeedArgs then
                 for i, nm in ipairs(prof.KandangNames) do
                     if nm == name and prof.FeedArgs[i] ~= nil then
-                        feedUntilThreshold(prof.FeedArgs[i], nm)
+                        for _ = 1, PakanConfig.CallsPerStop do
+                            local attempted = feedSlotIfNeeded(prof.FeedArgs[i], nm)
+                            if not attempted then break end
+                            task.wait(PakanConfig.CallDelay)
+                        end
                         break
                     end
                 end
@@ -4151,16 +4131,10 @@ local function buildTernakPage()
         return "?"
     end
 
-    local function slotText(i)
-        if PakanState.Status[i] == "empty" then return "kosong" end
-        local lv = PakanState.Levels[i]
-        if lv then return string.format("%d%%", math.floor(lv + 0.5)) end
-        return statusWord(PakanState.Status[i])
-    end
-
     H.cb.pakan = function()
         feedLbl.Text = string.format("🌾 Auto Kasih Pakan (%d ok | %d skip)", PakanState.Fill, PakanState.Skip)
-        waitLbl.Text = string.format("⏳ Tunggu Habis (P1 %s | P2 %s)", slotText(1), slotText(2))
+        waitLbl.Text = string.format("⏳ Tunggu Habis (P1 %s | P2 %s)",
+            statusWord(PakanState.Status[1]), statusWord(PakanState.Status[2]))
     end
 
     table.insert(Connections, waitBtn.Activated:Connect(function()
