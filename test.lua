@@ -1,4 +1,5 @@
 
+
 -- SERVICES
 local Players = game:GetService("Players")
 local Workspace = game:GetService("Workspace")
@@ -1322,6 +1323,8 @@ local TernakHub = (function()
                 KandangSelected = { true, true },
                 PlotKeywords = {},
                 StartAtNearest = false, -- selalu mulai dari palung_1 (urutan tetap: palung_1 lalu palung_2)
+                DwellTime = 10,         -- detik diam di tiap palung (setelah isi pakan) sebelum lanjut
+                LockTargets = true,     -- kunci tujuan ke palung satu kandang saja (abaikan palung kandang sebelah)
                 FeedArgs = { 1, 2 } -- argumen IsiPakan untuk tiap tujuan (palung_1 -> 1, palung_2 -> 2)
             }
         },
@@ -2330,8 +2333,97 @@ local TernakHub = (function()
         return false
     end
 
+    -- Semua objek bernama persis `name` (Part/Model/Folder) beserta posisi dan status kepemilikan
+    local function collectNamed(name)
+        local lname = string.lower(name)
+        local tokens = ownerTokens()
+        local list = {}
+        for _, obj in ipairs(Workspace:GetDescendants()) do
+            if string.lower(obj.Name) == lname and (obj:IsA("BasePart") or obj:IsA("Model") or obj:IsA("Folder")) then
+                local pos = objPosition(obj)
+                if pos then
+                    table.insert(list, { obj = obj, pos = pos, owned = isOwnedByMe(obj, tokens) })
+                end
+            end
+        end
+        return list
+    end
+
+    -- Jumlah parent yang dimiliki bersama dua objek (makin banyak = makin satu kelompok/kandang)
+    local function sharedAncestorCount(a, b)
+        local setA = {}
+        local node = a.Parent
+        while node and node ~= Workspace and node ~= game do
+            setA[node] = true
+            node = node.Parent
+        end
+        local count = 0
+        node = b.Parent
+        while node and node ~= Workspace and node ~= game do
+            if setA[node] then
+                count += 1
+            end
+            node = node.Parent
+        end
+        return count
+    end
+
+    -- Kunci tujuan profil ke satu kelompok: objek pertama = yang terdekat dari traktor, objek berikutnya =
+    -- yang paling satu kelompok (parent bersama terbanyak) dengan objek pertama, lalu yang terdekat.
+    -- Milik sendiri diutamakan. Return: { [nama] = {obj=, pos=} }
+    local function lockGroup(prof, fromPos)
+        local locked = {}
+        local anchor = nil
+        local usedForeign = false
+
+        for _, name in ipairs(prof.KandangNames) do
+            local cands = collectNamed(name)
+            local owned = {}
+            for _, c in ipairs(cands) do
+                if c.owned then table.insert(owned, c) end
+            end
+            if #owned > 0 then
+                cands = owned
+            elseif #cands > 0 then
+                usedForeign = true
+            end
+
+            local best, bestShared, bestDist = nil, -1, math.huge
+            for _, c in ipairs(cands) do
+                local shared = anchor and sharedAncestorCount(anchor.obj, c.obj) or 0
+                local dist = (c.pos - (anchor and anchor.pos or fromPos)).Magnitude
+                if shared > bestShared or (shared == bestShared and dist < bestDist) then
+                    best, bestShared, bestDist = c, shared, dist
+                end
+            end
+            if best then
+                locked[name] = best
+                if not anchor then anchor = best end
+                palungCache[name] = best.obj -- gerbang Tunggu Habis membaca palung yang sama
+            end
+        end
+
+        local parts = {}
+        for _, name in ipairs(prof.KandangNames) do
+            local c = locked[name]
+            table.insert(parts, name .. " = " .. (c and c.obj:GetFullName() or "(tidak ditemukan)"))
+        end
+        print("[Rute Traktor] Tujuan dikunci: " .. table.concat(parts, " | "))
+        if usedForeign then
+            warn("[Rute Traktor] Ada tujuan yang tidak cocok ID kosan sendiri, memakai yang terdekat")
+        end
+        return locked
+    end
+
     -- Cari kandang bernama persis (mis. "Kandang_1"): milik sendiri > cocok kata kunci plot > terdekat
     local function findKandangPos(name, fromPos)
+        -- Tujuan yang sudah dikunci (profil LockTargets) dipakai apa adanya, tanpa mencari yang lain
+        local lockedEntry = RouteState.Locked and RouteState.Locked[name]
+        if lockedEntry and lockedEntry.obj.Parent then
+            local lp = objPosition(lockedEntry.obj)
+            if lp then return lp end
+        end
+
         local lname = string.lower(name)
         local tokens = ownerTokens()
         local prof = RouteConfig.Profiles[RouteState.Profile]
@@ -2440,6 +2532,11 @@ local TernakHub = (function()
             RouteState.KIndex = 1
             RouteState.KandangPos = nil
             local profInit = RouteConfig.Profiles[RouteState.Profile]
+            -- Profil LockTargets (Rute Pakan): kunci tujuan ke satu kandang, abaikan palung kandang sebelah
+            RouteState.Locked = nil
+            if profInit and profInit.LockTargets then
+                RouteState.Locked = lockGroup(profInit, pos)
+            end
             local startNearest = RouteConfig.StartAtNearest
             if profInit and profInit.StartAtNearest ~= nil then
                 startNearest = profInit.StartAtNearest -- profil boleh menimpa (Rute Pakan: selalu dari palung_1)
@@ -2489,7 +2586,7 @@ local TernakHub = (function()
                     end
                 end
             end
-            task.wait(RouteConfig.DwellTime)
+            task.wait((prof and prof.DwellTime) or RouteConfig.DwellTime)
             RouteState.KandangPos = nil
             RouteState.KIndex += 1
             if RouteState.KIndex > #list then
@@ -2564,6 +2661,7 @@ local TernakHub = (function()
             return nil
         end
         RouteState.Profile = idx
+        RouteState.Locked = nil
         RouteState.KIndex = 1
         RouteState.KandangPos = nil
         RouteState.KandangName = nil
