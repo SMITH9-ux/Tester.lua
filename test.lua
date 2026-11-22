@@ -1336,7 +1336,7 @@ local TernakHub = (function()
                 KandangSelected = { true, true },
                 PlotKeywords = {},
                 StartAtNearest = false, -- selalu mulai dari palung_1 (urutan tetap: palung_1 lalu palung_2)
-                DwellTime = 4,          -- detik diam di tiap palung (setelah isi pakan) sebelum lanjut (diubah ke 4 detik)
+                DwellTime = 0.3,        -- detik diam di tiap palung (setelah isi pakan) sebelum lanjut (dipercepat ke 0.3 detik)
                 LockTargets = true,     -- kunci tujuan ke palung satu kandang saja (abaikan palung kandang sebelah)
                 FeedArgs = { 1, 2 } -- argumen IsiPakan untuk tiap tujuan (palung_1 -> 1, palung_2 -> 2)
             },
@@ -1558,14 +1558,14 @@ local TernakHub = (function()
     -- ========================================================
     local PakanConfig = {
         Slots = { 1, 2 },        -- argumen IsiPakan untuk tombol Auto Kasih Pakan (berkala)
-        Interval = 4,            -- detik antar siklus (berkala) - dikurangi ke 4 detik
+        Interval = 0.3,          -- detik antar siklus (berkala) - dipercepat ke 0.3 detik
         CallDelay = 0.3,         -- detik antar pemanggilan IsiPakan
         CallsPerStop = 1,        -- jumlah IsiPakan tiap kali tiba di palung (Rute Pakan)
 
         -- Tunggu habis baru isi: IsiPakan hanya dipanggil bila palung terdeteksi kosong
         WaitUntilEmpty = false,  -- ON: isi hanya saat palung habis (default OFF, semua fitur Ternak mulai OFF)
-        CheckInterval = 3,       -- detik antar pengecekan (Auto Kasih Pakan berkala saat Tunggu Habis ON)
-        MinRefillGap = 5,        -- detik minimum antar pengisian palung yang sama
+        CheckInterval = 0.3,     -- detik antar pengecekan (Auto Kasih Pakan berkala saat Tunggu Habis ON)
+        MinRefillGap = 0.3,      -- detik minimum antar pengisian palung yang sama
         UnknownProbe = true,     -- status tak terbaca: tetap coba isi (server menolak bila belum habis)
         ProbeCooldown = 15       -- detik antar percobaan isi saat status tak terbaca
     }
