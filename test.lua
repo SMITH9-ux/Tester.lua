@@ -3118,97 +3118,137 @@ do
     end
 end
 
--- Main Window
+-- Main Window [JJK Theme]
 local MainFrame = Instance.new("Frame")
 MainFrame.Name = "MainFrame"
 MainFrame.Size = UDim2.new(0, WIN_WIDTH, 0, WIN_HEIGHT)
 MainFrame.Position = UDim2.new(0.5, -WIN_WIDTH / 2, 0.18, 0)
-MainFrame.BackgroundColor3 = Color3.fromRGB(15, 17, 24)
+MainFrame.BackgroundColor3 = Color3.fromRGB(8, 5, 12)
 MainFrame.BorderSizePixel = 0
 MainFrame.ClipsDescendants = true
 MainFrame.Active = true
 MainFrame.Parent = ScreenGui
 
 local MainCorner = Instance.new("UICorner", MainFrame)
-MainCorner.CornerRadius = UDim.new(0, 14)
+MainCorner.CornerRadius = UDim.new(0, 16)
 
 local MainStroke = Instance.new("UIStroke", MainFrame)
-MainStroke.Color = Color3.fromRGB(48, 52, 74)
-MainStroke.Thickness = 1.4
+MainStroke.Color = Color3.fromRGB(160, 20, 40)
+MainStroke.Thickness = 1.8
 
 local MainGradient = Instance.new("UIGradient", MainFrame)
-MainGradient.Rotation = 45
+MainGradient.Rotation = 135
 MainGradient.Color = ColorSequence.new({
-    ColorSequenceKeypoint.new(0.0, Color3.fromRGB(18, 20, 29)),
-    ColorSequenceKeypoint.new(1.0, Color3.fromRGB(11, 13, 19))
+    ColorSequenceKeypoint.new(0.0, Color3.fromRGB(14, 6, 18)),
+    ColorSequenceKeypoint.new(0.5, Color3.fromRGB(10, 4, 14)),
+    ColorSequenceKeypoint.new(1.0, Color3.fromRGB(6, 2, 10))
 })
 
+-- Gojo Wallpaper Background
+local GojoBg = Instance.new("ImageLabel")
+GojoBg.Name = "GojoBg"
+GojoBg.Size = UDim2.new(1, 0, 1, 0)
+GojoBg.Position = UDim2.new(0, 0, 0, 0)
+GojoBg.BackgroundTransparency = 1
+GojoBg.Image = "rbxassetid://15134244566" -- Gojo Satoru poster
+GojoBg.ScaleType = Enum.ScaleType.Crop
+GojoBg.ImageTransparency = 0.72
+GojoBg.ZIndex = 0
+GojoBg.Parent = MainFrame
+Instance.new("UICorner", GojoBg).CornerRadius = UDim.new(0, 16)
+
+-- Dark overlay di atas wallpaper agar teks tetap terbaca
+local BgOverlay = Instance.new("Frame")
+BgOverlay.Name = "BgOverlay"
+BgOverlay.Size = UDim2.new(1, 0, 1, 0)
+BgOverlay.Position = UDim2.new(0, 0, 0, 0)
+BgOverlay.BackgroundColor3 = Color3.fromRGB(5, 2, 10)
+BgOverlay.BackgroundTransparency = 0.35
+BgOverlay.BorderSizePixel = 0
+BgOverlay.ZIndex = 1
+BgOverlay.Parent = MainFrame
+Instance.new("UICorner", BgOverlay).CornerRadius = UDim.new(0, 16)
+
 -- ========================================================
--- HEADER BAR
+-- HEADER BAR [JJK THEME]
 -- ========================================================
 local Header = Instance.new("Frame")
 Header.Name = "Header"
 Header.Size = UDim2.new(1, 0, 0, MINI_HEIGHT)
-Header.BackgroundColor3 = Color3.fromRGB(22, 25, 36)
+Header.BackgroundColor3 = Color3.fromRGB(10, 4, 16)
 Header.BorderSizePixel = 0
+Header.ZIndex = 2
 Header.Parent = MainFrame
 
 local HeaderCorner = Instance.new("UICorner", Header)
-HeaderCorner.CornerRadius = UDim.new(0, 14)
+HeaderCorner.CornerRadius = UDim.new(0, 16)
 
 local HeaderStroke = Instance.new("UIStroke", Header)
-HeaderStroke.Color = Color3.fromRGB(38, 42, 60)
-HeaderStroke.Thickness = 1
+HeaderStroke.Color = Color3.fromRGB(140, 15, 35)
+HeaderStroke.Thickness = 1.2
 
--- Logo Icon Box
-local LogoBox = Instance.new("Frame")
-LogoBox.Size = UDim2.new(0, 28, 0, 28)
-LogoBox.Position = UDim2.new(0, 12, 0.5, -14)
-LogoBox.BackgroundColor3 = Color3.fromRGB(99, 102, 241)
-LogoBox.BorderSizePixel = 0
-LogoBox.Parent = Header
-Instance.new("UICorner", LogoBox).CornerRadius = UDim.new(0, 7)
-
-local LogoGrad = Instance.new("UIGradient", LogoBox)
-LogoGrad.Rotation = 45
-LogoGrad.Color = ColorSequence.new({
-    ColorSequenceKeypoint.new(0, Color3.fromRGB(139, 92, 246)),
-    ColorSequenceKeypoint.new(1, Color3.fromRGB(59, 130, 246))
+local HeaderGrad = Instance.new("UIGradient", Header)
+HeaderGrad.Rotation = 90
+HeaderGrad.Color = ColorSequence.new({
+    ColorSequenceKeypoint.new(0, Color3.fromRGB(18, 6, 24)),
+    ColorSequenceKeypoint.new(1, Color3.fromRGB(8, 3, 14))
 })
 
-local LogoText = Instance.new("TextLabel")
-LogoText.Size = UDim2.new(1, 0, 1, 0)
-LogoText.BackgroundTransparency = 1
-LogoText.Font = Enum.Font.GothamBold
-LogoText.Text = "⚡"
-LogoText.TextColor3 = Color3.fromRGB(255, 255, 255)
-LogoText.TextSize = 14
-LogoText.Parent = LogoBox
+-- Gojo Avatar Image (JJK)
+local GojoFrame = Instance.new("Frame")
+GojoFrame.Size = UDim2.new(0, 36, 0, 36)
+GojoFrame.Position = UDim2.new(0, 6, 0.5, -18)
+GojoFrame.BackgroundColor3 = Color3.fromRGB(80, 10, 20)
+GojoFrame.BorderSizePixel = 0
+GojoFrame.Parent = Header
+Instance.new("UICorner", GojoFrame).CornerRadius = UDim.new(0, 8)
+
+local GojoFrameStroke = Instance.new("UIStroke", GojoFrame)
+GojoFrameStroke.Color = Color3.fromRGB(200, 30, 60)
+GojoFrameStroke.Thickness = 1.5
+
+local GojoImage = Instance.new("ImageLabel")
+GojoImage.Size = UDim2.new(1, 0, 1, 0)
+GojoImage.Position = UDim2.new(0, 0, 0, 0)
+GojoImage.BackgroundTransparency = 1
+GojoImage.Image = "rbxassetid://11486398809" -- Gojo Satoru JJK
+GojoImage.ScaleType = Enum.ScaleType.Crop
+GojoImage.Parent = GojoFrame
+Instance.new("UICorner", GojoImage).CornerRadius = UDim.new(0, 8)
 
 -- Title & Creator Subtitle (Smith Ganteng)
 local TitleLabel = Instance.new("TextLabel")
 TitleLabel.Size = UDim2.new(1, -160, 0, 18)
-TitleLabel.Position = UDim2.new(0, 48, 0, 7)
+TitleLabel.Position = UDim2.new(0, 50, 0, 6)
 TitleLabel.BackgroundTransparency = 1
 TitleLabel.Font = Enum.Font.GothamBlack
-TitleLabel.Text = "INDO-KOST HUB"
-TitleLabel.TextColor3 = Color3.fromRGB(245, 245, 255)
-TitleLabel.TextSize = 13
+TitleLabel.Text = "⚔ INDO-KOST HUB"
+TitleLabel.TextColor3 = Color3.fromRGB(255, 245, 245)
+TitleLabel.TextSize = 12
 TitleLabel.TextXAlignment = Enum.TextXAlignment.Left
 TitleLabel.Parent = Header
 
+-- JJK Red glow text gradient
+local TitleGrad = Instance.new("UIGradient", TitleLabel)
+TitleGrad.Rotation = 0
+TitleGrad.Color = ColorSequence.new({
+    ColorSequenceKeypoint.new(0, Color3.fromRGB(255, 100, 100)),
+    ColorSequenceKeypoint.new(0.5, Color3.fromRGB(255, 255, 255)),
+    ColorSequenceKeypoint.new(1, Color3.fromRGB(220, 180, 255))
+})
+
 local SubTitleLabel = Instance.new("TextLabel")
 SubTitleLabel.Size = UDim2.new(1, -160, 0, 14)
-SubTitleLabel.Position = UDim2.new(0, 48, 0, 25)
+SubTitleLabel.Position = UDim2.new(0, 50, 0, 25)
 SubTitleLabel.BackgroundTransparency = 1
 SubTitleLabel.Font = Enum.Font.GothamBold
-SubTitleLabel.Text = "👑 SMITH GANTENG"
-SubTitleLabel.TextColor3 = Color3.fromRGB(251, 191, 36)
+SubTitleLabel.Text = "👑 SMITH GANTENG  •  呪術廻戦"
+SubTitleLabel.TextColor3 = Color3.fromRGB(220, 160, 50)
 SubTitleLabel.TextSize = 9
 SubTitleLabel.TextXAlignment = Enum.TextXAlignment.Left
 SubTitleLabel.Parent = Header
 
--- Control Buttons (Minimize & Close)
+-- Control Buttons (Minimize & Close) [JJK]
 local HeaderControls = Instance.new("Frame")
 HeaderControls.Size = UDim2.new(0, 68, 1, 0)
 HeaderControls.Position = UDim2.new(1, -74, 0, 0)
@@ -3224,48 +3264,77 @@ ControlsLayout.Padding = UDim.new(0, 6)
 local function createHeaderIconBtn(symbol, bgHover, txtColor)
     local btn = Instance.new("TextButton")
     btn.Size = UDim2.new(0, 26, 0, 26)
-    btn.BackgroundColor3 = Color3.fromRGB(29, 32, 46)
+    btn.BackgroundColor3 = Color3.fromRGB(28, 10, 20)
     btn.BorderSizePixel = 0
     btn.Font = Enum.Font.GothamBold
     btn.Text = symbol
-    btn.TextColor3 = txtColor or Color3.fromRGB(180, 185, 205)
+    btn.TextColor3 = txtColor or Color3.fromRGB(200, 150, 160)
     btn.TextSize = 11
     btn.AutoButtonColor = false
     btn.Parent = HeaderControls
     Instance.new("UICorner", btn).CornerRadius = UDim.new(0, 6)
     local st = Instance.new("UIStroke", btn)
-    st.Color = Color3.fromRGB(45, 48, 68)
+    st.Color = Color3.fromRGB(100, 20, 35)
     st.Thickness = 1
 
     btn.MouseEnter:Connect(function()
         TweenService:Create(btn, TWEEN_FAST, { BackgroundColor3 = bgHover }):Play()
     end)
     btn.MouseLeave:Connect(function()
-        TweenService:Create(btn, TWEEN_FAST, { BackgroundColor3 = Color3.fromRGB(29, 32, 46) }):Play()
+        TweenService:Create(btn, TWEEN_FAST, { BackgroundColor3 = Color3.fromRGB(28, 10, 20) }):Play()
     end)
 
     return btn
 end
 
-local MiniBtn = createHeaderIconBtn("—", Color3.fromRGB(48, 52, 75))
-local CloseBtn = createHeaderIconBtn("✕", Color3.fromRGB(225, 29, 72), Color3.fromRGB(255, 120, 140))
+local MiniBtn = createHeaderIconBtn("—", Color3.fromRGB(60, 20, 40), Color3.fromRGB(220, 160, 180))
+local CloseBtn = createHeaderIconBtn("✕", Color3.fromRGB(180, 15, 35), Color3.fromRGB(255, 100, 120))
+
+-- JJK Sukuna small portrait (kanan header, sebelum tombol control)
+local SukunaPortrait = Instance.new("ImageLabel")
+SukunaPortrait.Name = "SukunaPortrait"
+SukunaPortrait.Size = UDim2.new(0, 28, 0, 36)
+SukunaPortrait.Position = UDim2.new(1, -108, 0.5, -18)
+SukunaPortrait.BackgroundTransparency = 1
+SukunaPortrait.Image = "rbxassetid://6521912815" -- Sukuna portrait
+SukunaPortrait.ScaleType = Enum.ScaleType.Fit
+SukunaPortrait.ImageTransparency = 0.15
+SukunaPortrait.Parent = Header
 
 -- ========================================================
--- TAB BAR (PILL SEGMENTED CONTROLS)
+-- TAB BAR (PILL SEGMENTED CONTROLS) [JJK]
 -- ========================================================
+-- JJK Decorative Banner Strip (di bawah header, di atas tab bar)
+local JJKBanner = Instance.new("Frame")
+JJKBanner.Name = "JJKBanner"
+JJKBanner.Size = UDim2.new(1, 0, 0, 5)
+JJKBanner.Position = UDim2.new(0, 0, 0, MINI_HEIGHT + 1)
+JJKBanner.BackgroundColor3 = Color3.fromRGB(180, 15, 35)
+JJKBanner.BorderSizePixel = 0
+JJKBanner.Parent = MainFrame
+
+local JJKBannerGrad = Instance.new("UIGradient", JJKBanner)
+JJKBannerGrad.Rotation = 0
+JJKBannerGrad.Color = ColorSequence.new({
+    ColorSequenceKeypoint.new(0, Color3.fromRGB(80, 0, 15)),
+    ColorSequenceKeypoint.new(0.3, Color3.fromRGB(220, 20, 50)),
+    ColorSequenceKeypoint.new(0.7, Color3.fromRGB(220, 20, 50)),
+    ColorSequenceKeypoint.new(1, Color3.fromRGB(80, 0, 15))
+})
+
 -- Bagian UI di bawah dibungkus satu fungsi agar variabelnya tidak menumpuk di fungsi utama
 -- (batas Lua/Luau: 200 variabel local per fungsi, dan sebagian executor menambah local sendiri).
 local _ = (function()
 local TabBar = Instance.new("Frame")
 TabBar.Name = "TabBar"
 TabBar.Size = UDim2.new(1, -24, 0, 36)
-TabBar.Position = UDim2.new(0, 12, 0, MINI_HEIGHT + 8)
-TabBar.BackgroundColor3 = Color3.fromRGB(20, 22, 32)
+TabBar.Position = UDim2.new(0, 12, 0, MINI_HEIGHT + 10)
+TabBar.BackgroundColor3 = Color3.fromRGB(12, 5, 18)
 TabBar.BorderSizePixel = 0
 TabBar.Parent = MainFrame
-Instance.new("UICorner", TabBar).CornerRadius = UDim.new(0, 8)
+Instance.new("UICorner", TabBar).CornerRadius = UDim.new(0, 10)
 local tabStroke = Instance.new("UIStroke", TabBar)
-tabStroke.Color = Color3.fromRGB(36, 40, 58)
+tabStroke.Color = Color3.fromRGB(120, 15, 30)
 tabStroke.Thickness = 1
 
 local TabListLayout = Instance.new("UIListLayout", TabBar)
@@ -3277,11 +3346,11 @@ TabListLayout.Padding = UDim.new(0, 6)
 local function createTabPill(title)
     local btn = Instance.new("TextButton")
     btn.Size = UDim2.new(1 / 6, -6, 1, -6)
-    btn.BackgroundColor3 = Color3.fromRGB(20, 22, 32)
+    btn.BackgroundColor3 = Color3.fromRGB(12, 5, 18)
     btn.BorderSizePixel = 0
     btn.Font = Enum.Font.GothamBold
     btn.Text = title
-    btn.TextColor3 = Color3.fromRGB(130, 135, 155)
+    btn.TextColor3 = Color3.fromRGB(120, 80, 90)
     btn.TextSize = 10
     btn.TextScaled = true
     btn.AutoButtonColor = false
@@ -3313,12 +3382,12 @@ local function createModernCard(parent, height, posY)
     local card = Instance.new("Frame")
     card.Size = UDim2.new(1, 0, 0, height)
     card.Position = UDim2.new(0, 0, 0, posY)
-    card.BackgroundColor3 = Color3.fromRGB(21, 23, 33)
+    card.BackgroundColor3 = Color3.fromRGB(14, 6, 18)
     card.BorderSizePixel = 0
     card.Parent = parent
-    Instance.new("UICorner", card).CornerRadius = UDim.new(0, 8)
+    Instance.new("UICorner", card).CornerRadius = UDim.new(0, 10)
     local stroke = Instance.new("UIStroke", card)
-    stroke.Color = Color3.fromRGB(36, 40, 58)
+    stroke.Color = Color3.fromRGB(100, 15, 30)
     stroke.Thickness = 1
     return card
 end
@@ -3453,22 +3522,137 @@ LahanSubInfo.TextSize = 9
 LahanSubInfo.TextXAlignment = Enum.TextXAlignment.Left
 LahanSubInfo.Parent = LahanCard
 
--- Card 3: Parameter Tanam
-local PlantConfigCard = createModernCard(PlantPage, 32, 144)
+-- Card 3: Setting Delay Auto Nanam & Delay TP (Auto Farm)
+local PlantDelayCard = createModernCard(PlantPage, 64, 144)
 
-local ConfigInfoLabel = Instance.new("TextLabel")
-ConfigInfoLabel.Size = UDim2.new(1, -24, 1, 0)
-ConfigInfoLabel.Position = UDim2.new(0, 12, 0, 0)
-ConfigInfoLabel.BackgroundTransparency = 1
-ConfigInfoLabel.Font = Enum.Font.GothamMedium
-ConfigInfoLabel.Text = string.format("⚡ Beli: %d | Delay: %.2fs | Cooldown: %.2fs | R4: %d", PlantConfig.BUY_COUNT, PlantConfig.INTER_ACTION_DELAY, PlantConfig.CYCLE_COOLDOWN, PlantConfig.PLOT4_RADIUS)
-ConfigInfoLabel.TextColor3 = Color3.fromRGB(150, 155, 175)
-ConfigInfoLabel.TextSize = 9
-ConfigInfoLabel.TextXAlignment = Enum.TextXAlignment.Center
-ConfigInfoLabel.Parent = PlantConfigCard
+-- Kolom Kiri: Delay Auto Nanam
+local DelayPlantTitle = Instance.new("TextLabel")
+DelayPlantTitle.Size = UDim2.new(0.5, -16, 0, 14)
+DelayPlantTitle.Position = UDim2.new(0, 10, 0, 6)
+DelayPlantTitle.BackgroundTransparency = 1
+DelayPlantTitle.Font = Enum.Font.GothamBold
+DelayPlantTitle.Text = "⏱️ DELAY NANAM (DTK):"
+DelayPlantTitle.TextColor3 = Color3.fromRGB(99, 102, 241)
+DelayPlantTitle.TextSize = 8.5
+DelayPlantTitle.TextXAlignment = Enum.TextXAlignment.Left
+DelayPlantTitle.Parent = PlantDelayCard
+
+local PlantDelayBox = Instance.new("Frame")
+PlantDelayBox.Size = UDim2.new(0.5, -16, 0, 28)
+PlantDelayBox.Position = UDim2.new(0, 10, 0, 24)
+PlantDelayBox.BackgroundColor3 = Color3.fromRGB(15, 16, 24)
+PlantDelayBox.BorderSizePixel = 0
+PlantDelayBox.Parent = PlantDelayCard
+Instance.new("UICorner", PlantDelayBox).CornerRadius = UDim.new(0, 6)
+local pdbStroke = Instance.new("UIStroke", PlantDelayBox)
+pdbStroke.Color = Color3.fromRGB(42, 46, 66)
+pdbStroke.Thickness = 1
+
+local MinusPlantBtn = Instance.new("TextButton")
+MinusPlantBtn.Size = UDim2.new(0, 26, 1, 0)
+MinusPlantBtn.Position = UDim2.new(0, 0, 0, 0)
+MinusPlantBtn.BackgroundColor3 = Color3.fromRGB(30, 33, 48)
+MinusPlantBtn.BorderSizePixel = 0
+MinusPlantBtn.Font = Enum.Font.GothamBold
+MinusPlantBtn.Text = "−"
+MinusPlantBtn.TextColor3 = Color3.fromRGB(200, 205, 230)
+MinusPlantBtn.TextSize = 13
+MinusPlantBtn.AutoButtonColor = false
+MinusPlantBtn.Parent = PlantDelayBox
+Instance.new("UICorner", MinusPlantBtn).CornerRadius = UDim.new(0, 5)
+
+local PlusPlantBtn = Instance.new("TextButton")
+PlusPlantBtn.Size = UDim2.new(0, 26, 1, 0)
+PlusPlantBtn.Position = UDim2.new(1, -26, 0, 0)
+PlusPlantBtn.BackgroundColor3 = Color3.fromRGB(30, 33, 48)
+PlusPlantBtn.BorderSizePixel = 0
+PlusPlantBtn.Font = Enum.Font.GothamBold
+PlusPlantBtn.Text = "+"
+PlusPlantBtn.TextColor3 = Color3.fromRGB(200, 205, 230)
+PlusPlantBtn.TextSize = 13
+PlusPlantBtn.AutoButtonColor = false
+PlusPlantBtn.Parent = PlantDelayBox
+Instance.new("UICorner", PlusPlantBtn).CornerRadius = UDim.new(0, 5)
+
+local PlantDelayInput = Instance.new("TextBox")
+PlantDelayInput.Name = "PlantDelayInput"
+PlantDelayInput.Size = UDim2.new(1, -56, 1, 0)
+PlantDelayInput.Position = UDim2.new(0, 28, 0, 0)
+PlantDelayInput.BackgroundTransparency = 1
+PlantDelayInput.Font = Enum.Font.GothamBold
+PlantDelayInput.Text = string.format("%.2f", PlantConfig.INTER_ACTION_DELAY)
+PlantDelayInput.TextColor3 = Color3.fromRGB(245, 245, 255)
+PlantDelayInput.PlaceholderText = "0.15"
+PlantDelayInput.PlaceholderColor3 = Color3.fromRGB(100, 105, 125)
+PlantDelayInput.TextSize = 10
+PlantDelayInput.ClearTextOnFocus = false
+PlantDelayInput.Parent = PlantDelayBox
+
+-- Kolom Kanan: Delay TP ke Plot
+local DelayTpTitle = Instance.new("TextLabel")
+DelayTpTitle.Size = UDim2.new(0.5, -16, 0, 14)
+DelayTpTitle.Position = UDim2.new(0.5, 6, 0, 6)
+DelayTpTitle.BackgroundTransparency = 1
+DelayTpTitle.Font = Enum.Font.GothamBold
+DelayTpTitle.Text = "🚀 DELAY TP PLOT (DTK):"
+DelayTpTitle.TextColor3 = Color3.fromRGB(99, 102, 241)
+DelayTpTitle.TextSize = 8.5
+DelayTpTitle.TextXAlignment = Enum.TextXAlignment.Left
+DelayTpTitle.Parent = PlantDelayCard
+
+local PlantTpDelayBox = Instance.new("Frame")
+PlantTpDelayBox.Size = UDim2.new(0.5, -16, 0, 28)
+PlantTpDelayBox.Position = UDim2.new(0.5, 6, 0, 24)
+PlantTpDelayBox.BackgroundColor3 = Color3.fromRGB(15, 16, 24)
+PlantTpDelayBox.BorderSizePixel = 0
+PlantTpDelayBox.Parent = PlantDelayCard
+Instance.new("UICorner", PlantTpDelayBox).CornerRadius = UDim.new(0, 6)
+local ptpbStroke = Instance.new("UIStroke", PlantTpDelayBox)
+ptpbStroke.Color = Color3.fromRGB(42, 46, 66)
+ptpbStroke.Thickness = 1
+
+local MinusTpBtn = Instance.new("TextButton")
+MinusTpBtn.Size = UDim2.new(0, 26, 1, 0)
+MinusTpBtn.Position = UDim2.new(0, 0, 0, 0)
+MinusTpBtn.BackgroundColor3 = Color3.fromRGB(30, 33, 48)
+MinusTpBtn.BorderSizePixel = 0
+MinusTpBtn.Font = Enum.Font.GothamBold
+MinusTpBtn.Text = "−"
+MinusTpBtn.TextColor3 = Color3.fromRGB(200, 205, 230)
+MinusTpBtn.TextSize = 13
+MinusTpBtn.AutoButtonColor = false
+MinusTpBtn.Parent = PlantTpDelayBox
+Instance.new("UICorner", MinusTpBtn).CornerRadius = UDim.new(0, 5)
+
+local PlusTpBtn = Instance.new("TextButton")
+PlusTpBtn.Size = UDim2.new(0, 26, 1, 0)
+PlusTpBtn.Position = UDim2.new(1, -26, 0, 0)
+PlusTpBtn.BackgroundColor3 = Color3.fromRGB(30, 33, 48)
+PlusTpBtn.BorderSizePixel = 0
+PlusTpBtn.Font = Enum.Font.GothamBold
+PlusTpBtn.Text = "+"
+PlusTpBtn.TextColor3 = Color3.fromRGB(200, 205, 230)
+PlusTpBtn.TextSize = 13
+PlusTpBtn.AutoButtonColor = false
+PlusTpBtn.Parent = PlantTpDelayBox
+Instance.new("UICorner", PlusTpBtn).CornerRadius = UDim.new(0, 5)
+
+local PlantTpDelayInput = Instance.new("TextBox")
+PlantTpDelayInput.Name = "PlantTpDelayInput"
+PlantTpDelayInput.Size = UDim2.new(1, -56, 1, 0)
+PlantTpDelayInput.Position = UDim2.new(0, 28, 0, 0)
+PlantTpDelayInput.BackgroundTransparency = 1
+PlantTpDelayInput.Font = Enum.Font.GothamBold
+PlantTpDelayInput.Text = string.format("%.2f", PlantConfig.TP_SETTLE_DELAY)
+PlantTpDelayInput.TextColor3 = Color3.fromRGB(245, 245, 255)
+PlantTpDelayInput.PlaceholderText = "0.05"
+PlantTpDelayInput.PlaceholderColor3 = Color3.fromRGB(100, 105, 125)
+PlantTpDelayInput.TextSize = 10
+PlantTpDelayInput.ClearTextOnFocus = false
+PlantTpDelayInput.Parent = PlantTpDelayBox
 
 -- Card 4: Toggle Auto TP (Plant)
-local PlantTpCard = createModernCard(PlantPage, 40, 182)
+local PlantTpCard = createModernCard(PlantPage, 40, 214)
 
 local PlantTpLabel = Instance.new("TextLabel")
 PlantTpLabel.Size = UDim2.new(1, -90, 1, 0)
@@ -3495,16 +3679,16 @@ TpPlantBtn.AutoButtonColor = false
 TpPlantBtn.Parent = PlantTpCard
 Instance.new("UICorner", TpPlantBtn).CornerRadius = UDim.new(0, 6)
 
--- Toggle Auto Plant Hero Button
+-- Toggle Auto Plant Hero Button [JJK]
 local TogglePlantBtn = Instance.new("TextButton")
 TogglePlantBtn.Name = "TogglePlantBtn"
 TogglePlantBtn.Size = UDim2.new(1, 0, 0, 42)
 TogglePlantBtn.Position = UDim2.new(0, 0, 1, -44)
-TogglePlantBtn.BackgroundColor3 = Color3.fromRGB(225, 29, 72)
+TogglePlantBtn.BackgroundColor3 = Color3.fromRGB(180, 15, 35)
 TogglePlantBtn.BorderSizePixel = 0
 TogglePlantBtn.Font = Enum.Font.GothamBold
-TogglePlantBtn.Text = "▶  START AUTO PLANT"
-TogglePlantBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+TogglePlantBtn.Text = "⚔  START AUTO PLANT"
+TogglePlantBtn.TextColor3 = Color3.fromRGB(255, 230, 235)
 TogglePlantBtn.TextSize = 11
 TogglePlantBtn.AutoButtonColor = false
 TogglePlantBtn.Parent = PlantPage
@@ -3513,8 +3697,8 @@ Instance.new("UICorner", TogglePlantBtn).CornerRadius = UDim.new(0, 10)
 local PlantBtnGrad = Instance.new("UIGradient", TogglePlantBtn)
 PlantBtnGrad.Rotation = 45
 PlantBtnGrad.Color = ColorSequence.new({
-    ColorSequenceKeypoint.new(0, Color3.fromRGB(244, 63, 94)),
-    ColorSequenceKeypoint.new(1, Color3.fromRGB(225, 29, 72))
+    ColorSequenceKeypoint.new(0, Color3.fromRGB(220, 20, 50)),
+    ColorSequenceKeypoint.new(1, Color3.fromRGB(140, 10, 30))
 })
 
 -- ========================================================
@@ -3720,11 +3904,11 @@ local ToggleCleanBtn = Instance.new("TextButton")
 ToggleCleanBtn.Name = "ToggleCleanBtn"
 ToggleCleanBtn.Size = UDim2.new(1, 0, 0, 42)
 ToggleCleanBtn.Position = UDim2.new(0, 0, 1, -44)
-ToggleCleanBtn.BackgroundColor3 = Color3.fromRGB(225, 29, 72)
+ToggleCleanBtn.BackgroundColor3 = Color3.fromRGB(180, 15, 35)
 ToggleCleanBtn.BorderSizePixel = 0
 ToggleCleanBtn.Font = Enum.Font.GothamBold
-ToggleCleanBtn.Text = "▶  START AUTO CLEAN"
-ToggleCleanBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+ToggleCleanBtn.Text = "⚔  START AUTO CLEAN"
+ToggleCleanBtn.TextColor3 = Color3.fromRGB(255, 230, 235)
 ToggleCleanBtn.TextSize = 11
 ToggleCleanBtn.AutoButtonColor = false
 ToggleCleanBtn.Parent = CleanPage
@@ -3733,8 +3917,8 @@ Instance.new("UICorner", ToggleCleanBtn).CornerRadius = UDim.new(0, 10)
 local CleanBtnGrad = Instance.new("UIGradient", ToggleCleanBtn)
 CleanBtnGrad.Rotation = 45
 CleanBtnGrad.Color = ColorSequence.new({
-    ColorSequenceKeypoint.new(0, Color3.fromRGB(244, 63, 94)),
-    ColorSequenceKeypoint.new(1, Color3.fromRGB(225, 29, 72))
+    ColorSequenceKeypoint.new(0, Color3.fromRGB(220, 20, 50)),
+    ColorSequenceKeypoint.new(1, Color3.fromRGB(140, 10, 30))
 })
 
 -- ========================================================
@@ -3818,11 +4002,11 @@ local ToggleAfkBtn = Instance.new("TextButton")
 ToggleAfkBtn.Name = "ToggleAfkBtn"
 ToggleAfkBtn.Size = UDim2.new(1, 0, 0, 42)
 ToggleAfkBtn.Position = UDim2.new(0, 0, 1, -44)
-ToggleAfkBtn.BackgroundColor3 = Color3.fromRGB(225, 29, 72)
+ToggleAfkBtn.BackgroundColor3 = Color3.fromRGB(180, 15, 35)
 ToggleAfkBtn.BorderSizePixel = 0
 ToggleAfkBtn.Font = Enum.Font.GothamBold
-ToggleAfkBtn.Text = "▶  START ANTI AFK"
-ToggleAfkBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+ToggleAfkBtn.Text = "⚔  START ANTI AFK"
+ToggleAfkBtn.TextColor3 = Color3.fromRGB(255, 230, 235)
 ToggleAfkBtn.TextSize = 11
 ToggleAfkBtn.AutoButtonColor = false
 ToggleAfkBtn.Parent = AfkPage
@@ -4774,36 +4958,36 @@ local BlindboxPage = (function()
 end)()
 
 -- ========================================================
--- FOOTER BAR (CREDIT: SMITH GANTENG)
+-- FOOTER BAR [JJK THEME]
 -- ========================================================
 local Footer = Instance.new("Frame")
 Footer.Name = "Footer"
 Footer.Size = UDim2.new(1, 0, 0, 22)
 Footer.Position = UDim2.new(0, 0, 1, -22)
-Footer.BackgroundColor3 = Color3.fromRGB(18, 20, 28)
+Footer.BackgroundColor3 = Color3.fromRGB(10, 4, 14)
 Footer.BorderSizePixel = 0
 Footer.Parent = MainFrame
 
 local FooterStroke = Instance.new("UIStroke", Footer)
-FooterStroke.Color = Color3.fromRGB(32, 35, 50)
+FooterStroke.Color = Color3.fromRGB(100, 15, 25)
 FooterStroke.Thickness = 1
 
 local FooterLabel = Instance.new("TextLabel")
 FooterLabel.Size = UDim2.new(1, 0, 1, 0)
 FooterLabel.BackgroundTransparency = 1
 FooterLabel.Font = Enum.Font.GothamBold
-FooterLabel.Text = "✨ smith ganteng ✨"
-FooterLabel.TextColor3 = Color3.fromRGB(251, 191, 36)
+FooterLabel.Text = "⚔ 呪術廻戦  •  smith ganteng  •  呪術廻戦 ⚔"
+FooterLabel.TextColor3 = Color3.fromRGB(180, 20, 40)
 FooterLabel.TextSize = 10
 FooterLabel.Parent = Footer
 
 -- ========================================================
 -- TAB SWITCHING ANIMATION
 -- ========================================================
-local TAB_ACTIVE_BG   = Color3.fromRGB(38, 42, 62)
-local TAB_INACTIVE_BG = Color3.fromRGB(20, 22, 32)
-local TAB_ACTIVE_TXT  = Color3.fromRGB(255, 255, 255)
-local TAB_INACTIVE_TXT = Color3.fromRGB(130, 135, 155)
+local TAB_ACTIVE_BG   = Color3.fromRGB(140, 15, 30)
+local TAB_INACTIVE_BG = Color3.fromRGB(12, 5, 18)
+local TAB_ACTIVE_TXT  = Color3.fromRGB(255, 230, 235)
+local TAB_INACTIVE_TXT = Color3.fromRGB(120, 80, 90)
 
 local TAB_MAP = {
     Plant = { page = PlantPage, btn = TabPlantBtn },
@@ -4871,6 +5055,54 @@ table.insert(Connections, TpPlantBtn.Activated:Connect(function()
     local col = PlantConfig.USE_TELEPORT and Color3.fromRGB(16, 185, 129) or Color3.fromRGB(45, 48, 65)
     TweenService:Create(TpPlantBtn, TWEEN_FAST, { BackgroundColor3 = col }):Play()
     TpPlantBtn.Text = PlantConfig.USE_TELEPORT and "ON" or "OFF"
+end))
+
+-- Setting Delay Auto Nanam Listeners
+table.insert(Connections, MinusPlantBtn.Activated:Connect(function()
+    PlantConfig.INTER_ACTION_DELAY = math.max(0.01, math.round((PlantConfig.INTER_ACTION_DELAY - 0.05) * 100) / 100)
+    PlantDelayInput.Text = string.format("%.2f", PlantConfig.INTER_ACTION_DELAY)
+    print(string.format("[AutoFarm] Delay nanam diset ke %.2fs", PlantConfig.INTER_ACTION_DELAY))
+end))
+
+table.insert(Connections, PlusPlantBtn.Activated:Connect(function()
+    PlantConfig.INTER_ACTION_DELAY = math.round((PlantConfig.INTER_ACTION_DELAY + 0.05) * 100) / 100
+    PlantDelayInput.Text = string.format("%.2f", PlantConfig.INTER_ACTION_DELAY)
+    print(string.format("[AutoFarm] Delay nanam diset ke %.2fs", PlantConfig.INTER_ACTION_DELAY))
+end))
+
+table.insert(Connections, PlantDelayInput.FocusLost:Connect(function()
+    local val = tonumber(PlantDelayInput.Text)
+    if val and val >= 0 then
+        PlantConfig.INTER_ACTION_DELAY = val
+        PlantDelayInput.Text = tostring(val)
+        print(string.format("[AutoFarm] Delay nanam diset ke %.3fs", val))
+    else
+        PlantDelayInput.Text = tostring(PlantConfig.INTER_ACTION_DELAY)
+    end
+end))
+
+-- Setting Delay TP Plot Listeners
+table.insert(Connections, MinusTpBtn.Activated:Connect(function()
+    PlantConfig.TP_SETTLE_DELAY = math.max(0, math.round((PlantConfig.TP_SETTLE_DELAY - 0.01) * 100) / 100)
+    PlantTpDelayInput.Text = string.format("%.2f", PlantConfig.TP_SETTLE_DELAY)
+    print(string.format("[AutoFarm] Delay TP plot diset ke %.2fs", PlantConfig.TP_SETTLE_DELAY))
+end))
+
+table.insert(Connections, PlusTpBtn.Activated:Connect(function()
+    PlantConfig.TP_SETTLE_DELAY = math.round((PlantConfig.TP_SETTLE_DELAY + 0.01) * 100) / 100
+    PlantTpDelayInput.Text = string.format("%.2f", PlantConfig.TP_SETTLE_DELAY)
+    print(string.format("[AutoFarm] Delay TP plot diset ke %.2fs", PlantConfig.TP_SETTLE_DELAY))
+end))
+
+table.insert(Connections, PlantTpDelayInput.FocusLost:Connect(function()
+    local val = tonumber(PlantTpDelayInput.Text)
+    if val and val >= 0 then
+        PlantConfig.TP_SETTLE_DELAY = val
+        PlantTpDelayInput.Text = tostring(val)
+        print(string.format("[AutoFarm] Delay TP plot diset ke %.3fs", val))
+    else
+        PlantTpDelayInput.Text = tostring(PlantConfig.TP_SETTLE_DELAY)
+    end
 end))
 
 -- Toggle Jarak Jauh Button (Clean)
