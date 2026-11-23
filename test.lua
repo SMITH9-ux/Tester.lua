@@ -1238,7 +1238,7 @@ local TernakHub = (function()
         traktor = function() end,
         dung = function() end,
         route = function() end,
-        convert = function() end,
+        masukkan = function() end,
         pakan = function() end
     }
     local RunService = game:GetService("RunService")
@@ -1339,14 +1339,6 @@ local TernakHub = (function()
                 DwellTime = 0.3,        -- detik diam di tiap palung (setelah isi pakan) sebelum lanjut (dipercepat ke 0.3 detik)
                 LockTargets = true,     -- kunci tujuan ke palung satu kandang saja (abaikan palung kandang sebelah)
                 FeedArgs = { 1, 2 } -- argumen IsiPakan untuk tiap tujuan (palung_1 -> 1, palung_2 -> 2)
-            },
-            { -- 4: Rute Convert (Mesin Convert Emas1)
-                Name = "Convert",
-                KandangNames = { "Mesin_Convert_Emas1", "Mesin_Convert", "convert" },
-                KandangSelected = { true },
-                PlotKeywords = { "msinconvert", "convert", "mesin" },
-                DwellTime = 2,
-                LockTargets = false
             }
         },
         Speed = 45,             -- studs/detik (dipercepat dari 25 untuk mengejar kotoran lebih cepat)
@@ -1842,678 +1834,323 @@ local TernakHub = (function()
     end
 
     -- ========================================================
-    -- MASUKKAN KOTORAN KE MESIN CONVERT (ConvertService.Masukkan)
-    -- Dipanggil saat memakai traktor / jalan kaki. Fitur Remote & TP terpisah.
+    -- HELPER POSISI & STATUS KENDARAAN (TERNAK)
     -- ========================================================
-    local ConvertConfig = {
-        Interval = 3,            -- detik antar pemanggilan Masukkan
-        MinGap = 0.5,            -- jeda minimum antar pemanggilan (agar pemicu dari rute tidak menumpuk)
-        TriggerDelay = 0.1,      -- detik setelah traktor mencapai kotoran sebelum Masukkan dipicu (dipercepat)
-        OnlyWhenDriving = true,  -- true = hanya saat duduk di traktor
-
-        -- Radius & Mode Jarak Jauh (tanpa perlu TP ke mesin convert)
-        Radius = 9999,               -- radius jangkauan convert jarak jauh (9999 studs untuk jangkauan global)
-        AutoTeleport = false,        -- default FALSE: tidak usah TP ke mesin convert! (memasukkan langsung dari radius tanpa bergerak)
-        TeleportDelay = 0.08,        -- jeda detik di mesin convert bila mode TP aktif
-        TargetMachineName = "Mesin_Convert_Emas1", -- nama spesifik mesin
-        ParentMachineName = "MsinConvert",         -- parent spesifik mesin
-
-        -- Taro kotoran hanya saat tangki traktor penuh
-        OnlyWhenFull = true,         -- true = Masukkan hanya saat tangki traktor terdeteksi penuh
-        FullThreshold = 1.0,         -- rasio isi yang dianggap penuh (1.0 = 100%)
-        CheckInterval = 2,           -- detik antar pengecekan tangki (saat OnlyWhenFull)
-        RetryGap = 5,                -- detik jeda setelah Masukkan gagal saat tangki penuh
-        ProbeWhenUnknown = true,     -- tangki tak terbaca: tetap coba Masukkan tiap ProbeInterval (server yang menilai)
-        ProbeInterval = 3,           -- detik antar percobaan isi saat status tangki tak terbaca
-        UseTankEvent = true,         -- dengarkan event TraktorService.RE.Berubah (data tangki langsung dari server)
-        TankEventDebounce = 1.5,     -- detik minimum antar pemicu Masukkan dari event
-        TankKeywords = { "tangki", "tank", "muatan", "kapasitas", "load", "kotoran" } -- kata kunci info tangki
-    }
-
-    local ConvertState = {
-        Running = false,         -- Auto Masukin Kotoran aktif/nonaktif
-        AutoTP = false,          -- default FALSE agar tidak usah TP ke mesin convert!
-        Radius = 9999,           -- radius jangkauan convert
-        Count = 0,               -- jumlah Masukkan yang berhasil
-        Fail = 0,                -- jumlah yang ditolak/gagal
-        Last = 0,
-        Busy = false,
-        LastSuccess = nil,       -- untuk log saat hasil berubah
-        TankStatus = "unknown",  -- "full" | "notfull" | "unknown"
-        TankLevel = nil,         -- rasio isi tangki (0..1) bila terbaca
-        EventRatio = nil,        -- rasio isi tangki dari event Berubah (prioritas utama)
-        EventTank = nil,         -- nilai tangki terakhir dari event
-        EventCap = nil,          -- kapasitasTangki terakhir dari event
-        EventConn = nil,         -- koneksi listener Berubah
-        LastEventTrigger = 0,
-        StatusLogged = nil,
-        LastProbe = nil,
-        Machine = nil,           -- instance mesin convert yang terdeteksi
-        MachinePos = nil,        -- posisi mesin convert
-        LastReturnPos = nil,     -- koordinat posisi sebelum TP
-        LastAmount = nil         -- nilai 'n' dari balasan { ok = true, n = ... }
-    }
-
-    local convertThread = nil
-    local convertRF = nil
-
-    local function getConvertRemote()
-        if convertRF and convertRF.Parent then return convertRF end
-        pcall(function()
-            convertRF = game:GetService("ReplicatedStorage").NKSystem.Packages.Knit.Services.ConvertService.RF.Masukkan
-        end)
-        if not convertRF then
-            pcall(function()
-                convertRF = ReplicatedStorage
-                    :WaitForChild("NKSystem", 5)
-                    :WaitForChild("Packages", 5)
-                    :WaitForChild("Knit", 5)
-                    :WaitForChild("Services", 5)
-                    :WaitForChild("ConvertService", 5)
-                    :WaitForChild("RF", 5)
-                    :WaitForChild("Masukkan", 5)
-            end)
+    local function objPosition(obj)
+        if obj:IsA("BasePart") then return obj.Position end
+        if obj:IsA("Attachment") then return obj.WorldPosition end
+        if obj:IsA("ProximityPrompt") then return promptPosition(obj) end
+        if obj:IsA("Model") then
+            local ok, cf = pcall(function() return obj:GetPivot() end)
+            if ok and cf then return cf.Position end
         end
-        return convertRF
+        local sum, n = Vector3.zero, 0
+        for _, d in ipairs(obj:GetDescendants()) do
+            if d:IsA("BasePart") then
+                sum += d.Position
+                n += 1
+            end
+        end
+        return n > 0 and sum / n or nil
     end
 
-    -- Sedang memakai traktor milik sendiri (duduk di kursinya)
-    local function drivingNow()
-        local model = findDriveTraktor()
-        if not model then return false end
+    local function isSeatedIn(model)
         local char = LocalPlayer.Character
         local hum = char and char:FindFirstChildOfClass("Humanoid")
         local seat = hum and hum.SeatPart
-        if seat ~= nil and seat:IsDescendantOf(model) then return true end
-        return not RouteConfig.RequireSeated
+        return seat ~= nil and seat:IsDescendantOf(model)
     end
 
-    -- ----- Deteksi tangki traktor penuh -----
-    local TANK_MAX_WORDS = { "max", "kapasitas", "capacity" }
-    local TANK_FULL_WORDS = { "penuh", "full" }
+    -- ========================================================
+    -- AUTO MASUKIN KOTORAN DOMBA KE MESIN CONVERT
+    -- Auto TP ke mesin convert saat tangki traktor sudah mencapai TankThreshold (300)
+    -- lalu otomatis kembali lagi ke posisi/tempat sebelumnya.
+    -- ========================================================
+    local MasukkanConfig = {
+        TankThreshold = 300, -- Masukkan saat isi tangki >= angka ini (default 300)
+        Interval = 2,        -- detik antar cek/ulang bila Masukkan gagal saat tangki sudah penuh
+        Debounce = 1.5,      -- jeda minimum antar pemicu Masukkan dari event
+        AutoTeleport = true, -- Auto TP ke mesin convert saat tangki penuh lalu kembali ke tempat semula
+        ConvertPos = nil,    -- Posisi manual Vector3 mesin convert (bila nil, auto-detect dari Workspace)
+        SettleDelay = 0.4,   -- detik tunggu di mesin convert sebelum InvokeServer
+        ReturnDelay = 0.3    -- detik tunggu setelah convert sebelum TP balik
+    }
 
-    -- Ubah teks (mis. "10/10", "85%", "Penuh", "Kosong") menjadi rasio isi, atau nil
-    local function parseTankText(text)
-        local l = string.lower(tostring(text or ""))
-        local cur, max = string.match(l, "(%d+%.?%d*)%s*/%s*(%d+%.?%d*)")
-        if cur then
-            local m = tonumber(max)
-            if m and m > 0 then return tonumber(cur) / m end
+    local MasukkanState = {
+        Running = false,
+        Count = 0,   -- jumlah Masukkan yang berhasil
+        Fail = 0,    -- jumlah yang ditolak/gagal
+        Last = nil,  -- status berhasil/gagal terakhir (untuk log saat berubah)
+        Tank = nil,      -- isi tangki terakhir dari event Berubah
+        EventConn = nil, -- koneksi listener Berubah
+        Busy = false,
+        LastTrigger = 0,
+        SavedConvertPos = nil
+    }
+
+    local CONVERT_KEYWORDS = {
+        "convert", "mesin_convert", "mesinconvert", "mesin convert",
+        "converter", "convertmachine", "mesinpupuk", "mesin_pupuk", "mesin pupuk"
+    }
+
+    -- Cari posisi mesin convert di Workspace
+    local function findConvertTarget()
+        if MasukkanConfig.ConvertPos then
+            return MasukkanConfig.ConvertPos, nil
         end
-        local pct = string.match(l, "(%d+%.?%d*)%s*%%")
-        if pct then return tonumber(pct) / 100 end
-        if pakanHasWord(l, TANK_FULL_WORDS) then return 1 end
-        if pakanHasWord(l, { "kosong", "empty" }) then return 0 end
-        return nil
-    end
+        if MasukkanState.SavedConvertPos then
+            return MasukkanState.SavedConvertPos, nil
+        end
 
-    local tankLabel, tankNextScan = nil, 0
+        local tokens = ownerTokens()
+        local char = LocalPlayer.Character
+        local hrp = char and char:FindFirstChild("HumanoidRootPart")
+        local origin = hrp and hrp.Position or Vector3.zero
 
-    -- Cadangan: cari label info tangki di HUD game (bukan GUI milik skrip ini)
-    -- Return: rasio, path label
-    local function readTankFromHud()
-        local pg = LocalPlayer:FindFirstChild("PlayerGui")
-        if not pg then return nil, nil end
+        -- 1. Cari ProximityPrompt di Workspace (aksi convert / masukkan kotoran / pupuk)
+        local bestPrompt, bestPromptPos, bestPromptScore, bestPromptDist = nil, nil, -1, math.huge
+        for _, obj in ipairs(Workspace:GetDescendants()) do
+            if obj:IsA("ProximityPrompt") and obj.Enabled then
+                local act = string.lower(obj.ActionText or "")
+                local objTxt = string.lower(obj.ObjectText or "")
+                local name = string.lower(obj.Name)
+                local full = act .. " " .. objTxt .. " " .. name
 
-        if not (tankLabel and tankLabel.Parent) then
-            tankLabel = nil
-            if os.clock() < tankNextScan then return nil, nil end
-            tankNextScan = os.clock() + 10
-            for _, d in ipairs(pg:GetDescendants()) do
-                if (d:IsA("TextLabel") or d:IsA("TextButton")) and d:FindFirstAncestor("IndoKostUltraHub") == nil then
-                    local okT, text = pcall(function() return d.Text end)
-                    if okT and text and text ~= "" then
-                        local lt = string.lower(text)
-                        local ln = string.lower(d.Name)
-                        if (pakanHasWord(lt, ConvertConfig.TankKeywords) or pakanHasWord(ln, ConvertConfig.TankKeywords))
-                            and parseTankText(text) ~= nil then
-                            tankLabel = d
+                if not string.find(full, "pakan", 1, true) and not string.find(full, "makan", 1, true) and not string.find(full, "palung", 1, true) then
+                    local matched = false
+                    for _, kw in ipairs(CONVERT_KEYWORDS) do
+                        if string.find(full, kw, 1, true) then
+                            matched = true
                             break
                         end
                     end
-                end
-            end
-        end
+                    if not matched and (string.find(full, "masukkan", 1, true) or string.find(full, "masuk", 1, true)) then
+                        matched = true
+                    end
 
-        if tankLabel then
-            return parseTankText(tankLabel.Text), tankLabel:GetFullName()
-        end
-        return nil, nil
-    end
-
-    -- Baca isi tangki traktor dari Attribute / Value / teks label di dalam model (lalu HUD)
-    -- Return: "full" | "notfull" | "unknown", rasio, ringkasan
-    local function readTankState(model)
-        local cur, max = nil, nil
-        local flagFull, flagNotFull = false, false
-        local textRatio = nil
-        local info = {}
-        local keywords = ConvertConfig.TankKeywords
-
-        local function considerValue(name, value)
-            local lname = string.lower(tostring(name))
-            local isTank = pakanHasWord(lname, keywords)
-            local isFlag = pakanHasWord(lname, TANK_FULL_WORDS)
-            if not isTank and not isFlag then return end
-            table.insert(info, tostring(name) .. "=" .. tostring(value))
-            local t = type(value)
-            if pakanHasWord(lname, TANK_MAX_WORDS) then
-                if t == "number" and not max then max = value end
-            elseif isFlag and t == "boolean" then
-                if value then flagFull = true else flagNotFull = true end
-            elseif t == "number" and not cur then
-                cur = value
-            end
-        end
-
-        local nodes = { model }
-        for _, d in ipairs(model:GetDescendants()) do
-            table.insert(nodes, d)
-            if #nodes >= 150 then break end
-        end
-
-        for _, node in ipairs(nodes) do
-            local okA, attrs = pcall(function() return node:GetAttributes() end)
-            if okA and attrs then
-                for k, v in pairs(attrs) do considerValue(k, v) end
-            end
-            if node:IsA("ValueBase") then
-                local okV, v = pcall(function() return node.Value end)
-                if okV then considerValue(node.Name, v) end
-            end
-            if node:IsA("TextLabel") or node:IsA("TextButton") then
-                local okT, text = pcall(function() return node.Text end)
-                if okT and text and text ~= "" then
-                    if pakanHasWord(string.lower(text), keywords) or pakanHasWord(string.lower(node.Name), keywords) then
-                        local r = parseTankText(text)
-                        if r ~= nil then
-                            textRatio = textRatio or r
-                            table.insert(info, "teks:" .. string.sub(text, 1, 24))
+                    if matched then
+                        local pos = promptPosition(obj)
+                        if pos then
+                            local owned = isOwnedByMe(obj, tokens)
+                            local score = owned and 2 or 1
+                            local dist = (pos - origin).Magnitude
+                            if score > bestPromptScore or (score == bestPromptScore and dist < bestPromptDist) then
+                                bestPrompt = obj
+                                bestPromptPos = pos
+                                bestPromptScore = score
+                                bestPromptDist = dist
+                            end
                         end
                     end
                 end
             end
         end
 
-        local ratio = textRatio
-        if ratio == nil and cur ~= nil and max ~= nil and max > 0 then
-            ratio = cur / max
-        end
-        if ratio == nil then
-            local hudRatio, hudPath = readTankFromHud()
-            if hudRatio ~= nil then
-                ratio = hudRatio
-                table.insert(info, "HUD:" .. tostring(hudPath))
-            end
+        if bestPrompt and bestPromptPos then
+            return bestPromptPos, bestPrompt
         end
 
-        local status = "unknown"
-        if ratio ~= nil then
-            status = (ratio >= ConvertConfig.FullThreshold - 0.001) and "full" or "notfull"
-        elseif flagFull then
-            status = "full"
-        elseif flagNotFull then
-            status = "notfull"
-        end
-
-        local summary = table.concat(info, ", ")
-        if #summary > 200 then summary = string.sub(summary, 1, 200) .. "..." end
-        return status, ratio, summary
-    end
-
-    -- Perlu Masukkan sekarang? (hanya bila tangki penuh; bila tak terbaca, coba berkala)
-    local function shouldConvert()
-        local model = findDriveTraktor()
-        local status, ratio, summary = "unknown", nil, ""
-        if ConvertConfig.UseTankEvent and ConvertState.EventRatio ~= nil then
-            -- Data dari event Berubah (paling akurat)
-            ratio = ConvertState.EventRatio
-            status = (ratio >= ConvertConfig.FullThreshold - 0.001) and "full" or "notfull"
-            summary = string.format("event Berubah: tangki=%s/%s",
-                tostring(ConvertState.EventTank), tostring(ConvertState.EventCap))
-        elseif model then
-            status, ratio, summary = readTankState(model)
-        end
-        ConvertState.TankStatus = status
-        ConvertState.TankLevel = ratio
-
-        if ConvertState.StatusLogged ~= status then
-            ConvertState.StatusLogged = status
-            print(string.format("[Convert] Tangki => %s%s | %s", status,
-                ratio and string.format(" (%d%%)", math.floor(ratio * 100 + 0.5)) or "",
-                summary ~= "" and summary or "(tidak ada Attribute/Value/teks tangki)"))
-        end
-        cb.convert()
-
-        if status == "full" then return true end
-        if status == "notfull" then return false end
-
-        if ConvertConfig.ProbeWhenUnknown then
-            local now = os.clock()
-            if not ConvertState.LastProbe or now - ConvertState.LastProbe >= ConvertConfig.ProbeInterval then
-                ConvertState.LastProbe = now
-                return true
-            end
-        end
-        return false
-    end
-
-    local function summarizeResult(result)
-        if type(result) ~= "table" then return tostring(result) end
-        local parts, n = {}, 0
-        for k, v in pairs(result) do
-            n += 1
-            if n > 8 then break end
-            table.insert(parts, tostring(k) .. "=" .. tostring(v))
-        end
-        return "{" .. table.concat(parts, ", ") .. "}"
-    end
-
-    -- Cari mesin convert di workspace (prioritas: Mesin_Convert_Emas1 dengan parent MsinConvert)
-    local function findConvertMachine()
-        if ConvertState.Machine and ConvertState.Machine.Parent then
-            local p = objPosition(ConvertState.Machine)
-            if p then return ConvertState.Machine, p end
-        end
-
-        -- 1. Prioritas Utama: Cari "Mesin_Convert_Emas1" yang ber-parent "MsinConvert"
+        -- 2. Cari Model / BasePart di Workspace dengan nama mengandung kata kunci convert
+        local bestObj, bestObjPos, bestObjScore, bestObjDist = nil, nil, -1, math.huge
         for _, obj in ipairs(Workspace:GetDescendants()) do
-            if obj.Name == "Mesin_Convert_Emas1" then
-                local parent = obj.Parent
-                if parent and parent.Name == "MsinConvert" then
-                    local pos = objPosition(obj)
-                    if pos then
-                        ConvertState.Machine = obj
-                        ConvertState.MachinePos = pos
-                        return obj, pos
-                    end
-                end
-            end
-        end
-
-        -- 2. Cadangan 1: Objek bernama "Mesin_Convert_Emas1" di mana saja
-        for _, obj in ipairs(Workspace:GetDescendants()) do
-            if obj.Name == "Mesin_Convert_Emas1" then
-                local pos = objPosition(obj)
-                if pos then
-                    ConvertState.Machine = obj
-                    ConvertState.MachinePos = pos
-                    return obj, pos
-                end
-            end
-        end
-
-        -- 3. Cadangan 2: Folder / Model "MsinConvert"
-        local msinFolder = Workspace:FindFirstChild("MsinConvert", true)
-        if msinFolder then
-            local target = msinFolder:FindFirstChild("Mesin_Convert_Emas1")
-                or msinFolder:FindFirstChildWhichIsA("BasePart", true)
-                or msinFolder:FindFirstChildWhichIsA("Model", true)
-            if target then
-                local pos = objPosition(target)
-                if pos then
-                    ConvertState.Machine = target
-                    ConvertState.MachinePos = pos
-                    return target, pos
-                end
-            end
-        end
-
-        -- 4. Cadangan Umum: Cari ProximityPrompt convert / mesin convert lainnya
-        local tokens = ownerTokens()
-        local bestObj, bestPos, bestDist = nil, nil, math.huge
-        local char = LocalPlayer.Character
-        local hrp = char and char:FindFirstChild("HumanoidRootPart")
-        local rootPos = hrp and hrp.Position or Vector3.zero
-
-        for _, obj in ipairs(Workspace:GetDescendants()) do
-            if obj:IsA("ProximityPrompt") and obj.Enabled then
-                local sig = promptSignature(obj)
-                if string.find(sig, "convert", 1, true) or (string.find(sig, "masuk", 1, true) and string.find(sig, "kotoran", 1, true)) then
-                    local pos = promptPosition(obj)
-                    if pos then
-                        local owned = isOwnedByMe(obj, tokens)
-                        if owned then
-                            ConvertState.Machine = obj
-                            ConvertState.MachinePos = pos
-                            return obj, pos
-                        elseif not bestObj then
-                            bestObj, bestPos = obj, pos
-                        end
-                    end
-                end
-            end
-        end
-
-        local machineKeywords = { "mesin_convert", "mesinconvert", "convert_mesin", "tempat_convert", "convert", "mesin" }
-        for _, obj in ipairs(Workspace:GetDescendants()) do
-            if (obj:IsA("Model") or obj:IsA("BasePart")) and not (char and obj:IsDescendantOf(char)) then
+            if (obj:IsA("BasePart") or obj:IsA("Model")) and not obj:IsDescendantOf(char) then
                 local lname = string.lower(obj.Name)
-                local match = false
-                for _, kw in ipairs(machineKeywords) do
+                local matched = false
+                for _, kw in ipairs(CONVERT_KEYWORDS) do
                     if string.find(lname, kw, 1, true) then
-                        match = true
+                        matched = true
                         break
                     end
                 end
 
-                if match then
+                if matched then
                     local pos = objPosition(obj)
                     if pos then
                         local owned = isOwnedByMe(obj, tokens)
-                        local dist = (pos - rootPos).Magnitude
-                        if owned then
-                            ConvertState.Machine = obj
-                            ConvertState.MachinePos = pos
-                            return obj, pos
-                        elseif dist < bestDist then
+                        local score = owned and 2 or 1
+                        local dist = (pos - origin).Magnitude
+                        if score > bestObjScore or (score == bestObjScore and dist < bestObjDist) then
                             bestObj = obj
-                            bestPos = pos
-                            bestDist = dist
+                            bestObjPos = pos
+                            bestObjScore = score
+                            bestObjDist = dist
                         end
                     end
                 end
             end
         end
 
-        if bestObj then
-            ConvertState.Machine = bestObj
-            ConvertState.MachinePos = bestPos
-            return bestObj, bestPos
+        if bestObj and bestObjPos then
+            return bestObjPos, nil
         end
+
         return nil, nil
     end
 
-    -- Fitur Terpisah: Teleport ke mesin convert, masukkan kotoran, lalu langsung balik lagi ke tempat sebelumnya
-    local function doTeleportConvertAndReturn()
-        if ConvertState.Busy then return false end
-        ConvertState.Busy = true
+    local masukkanThread = nil
 
-        local machineObj, machinePos = findConvertMachine()
-        if not machinePos then
-            warn("[Convert TP] Mesin convert (Mesin_Convert_Emas1 / MsinConvert) tidak ditemukan di workspace")
-            ConvertState.Busy = false
-            return false
-        end
+    local function masukkanKotoran()
+        if MasukkanState.Busy then return false end
+        MasukkanState.Busy = true
+        MasukkanState.LastTrigger = os.clock()
 
-        local driveModel = findDriveTraktor()
+        local traktor = findDriveTraktor()
+        local seated = traktor and isSeatedIn(traktor)
+
+        local prevCFrame = nil
         local char = LocalPlayer.Character
         local hrp = char and char:FindFirstChild("HumanoidRootPart")
-        local tractorRoot = driveModel and (driveModel.PrimaryPart or driveModel:FindFirstChildWhichIsA("BasePart", true))
-        local prevCFrame = nil
 
-        -- 1. Simpan posisi & orientasi sekarang sebelum teleport
-        if driveModel then
-            prevCFrame = driveModel:GetPivot()
-            ConvertState.LastReturnPos = prevCFrame.Position
-            pcall(function()
-                if tractorRoot then
-                    tractorRoot.AssemblyLinearVelocity = Vector3.zero
-                    tractorRoot.AssemblyAngularVelocity = Vector3.zero
-                end
-                driveModel:PivotTo(CFrame.new(machinePos + Vector3.new(0, 3, 0)))
-            end)
+        -- Simpan posisi/CFrame sebelumnya agar bisa balik lagi
+        if seated and traktor then
+            prevCFrame = traktor:GetPivot()
         elseif hrp then
             prevCFrame = hrp.CFrame
-            ConvertState.LastReturnPos = prevCFrame.Position
-            safeTeleport(machinePos)
         end
 
-        -- 2. Bypass & trigger ProximityPrompt jika ada pada mesin
-        if machineObj then
-            local prompt = machineObj:IsA("ProximityPrompt") and machineObj or machineObj:FindFirstChildWhichIsA("ProximityPrompt", true)
-            if prompt and prompt.Enabled then
-                pcall(function()
-                    prompt.RequiresLineOfSight = false
-                    prompt.MaxActivationDistance = 999999
-                    prompt.HoldDuration = 0
-                    firePrompt(prompt)
-                end)
-            end
-        end
-
-        task.wait(ConvertConfig.TeleportDelay)
-
-        -- 3. Eksekusi Remote Knit Masukkan sesuai spesifikasi
-        -- local Event = game:GetService("ReplicatedStorage").NKSystem.Packages.Knit.Services.ConvertService.RF.Masukkan
-        -- local Result = table.pack(Event:InvokeServer())
-        local okCall, resPack = pcall(function()
-            local Event = nil
-            pcall(function()
-                Event = game:GetService("ReplicatedStorage").NKSystem.Packages.Knit.Services.ConvertService.RF.Masukkan
-            end)
-            if not Event then
-                Event = getConvertRemote()
-            end
-            if not Event then return nil end
-            return table.pack(Event:InvokeServer())
-        end)
-
-        -- 4. Seketika KEMBALI LAGI ke tempat yang sebelumnya
-        if prevCFrame then
-            pcall(function()
-                if driveModel then
-                    driveModel:PivotTo(prevCFrame)
-                    if tractorRoot then
-                        tractorRoot.AssemblyLinearVelocity = Vector3.zero
-                        tractorRoot.AssemblyAngularVelocity = Vector3.zero
+        -- Auto Teleport ke Mesin Convert bila diaktifkan
+        local didTeleport = false
+        if MasukkanConfig.AutoTeleport then
+            local targetPos, prompt = findConvertTarget()
+            if targetPos then
+                didTeleport = true
+                print(string.format("[Masukkan Kotoran] TP ke Convert di (%.1f, %.1f, %.1f)", targetPos.X, targetPos.Y, targetPos.Z))
+                if seated and traktor and traktor.Parent then
+                    traktor:PivotTo(CFrame.new(targetPos + Vector3.new(0, 2.5, 0)))
+                    local root = traktor.PrimaryPart or traktor:FindFirstChildWhichIsA("BasePart", true)
+                    if root then
+                        root.AssemblyLinearVelocity = Vector3.zero
+                        root.AssemblyAngularVelocity = Vector3.zero
                     end
-                elseif hrp then
-                    hrp.CFrame = prevCFrame
-                    if hrp:IsA("BasePart") then
-                        hrp.AssemblyLinearVelocity = Vector3.zero
-                        hrp.AssemblyAngularVelocity = Vector3.zero
-                    end
+                else
+                    safeTeleport(targetPos)
                 end
-            end)
-        end
 
-        ConvertState.Busy = false
-        ConvertState.Last = os.clock()
+                task.wait(MasukkanConfig.SettleDelay)
 
-        local result = (okCall and resPack and resPack.n and resPack.n > 0) and resPack[1] or nil
-        -- Dianggap berhasil bila balasan berupa tabel {} (sesuai ExpectedResult) atau nilai truthy non-false
-        local success = okCall and result ~= nil and result ~= false
-        if success and type(result) == "table" and result.ok == false then
-            success = false
-        end
-        if success and type(result) == "table" and result.n then
-            ConvertState.LastAmount = result.n
-        end
-
-        if success then
-            ConvertState.Count += 1
-        else
-            ConvertState.Fail += 1
-        end
-
-        if ConvertState.LastSuccess ~= success then
-            ConvertState.LastSuccess = success
-            local text = okCall and summarizeResult(result) or tostring(result)
-            if success then
-                print(string.format("[Convert TP & Balik] Masukkan OK | %s%s",
-                    text, ConvertState.LastAmount and (" (n=" .. tostring(ConvertState.LastAmount) .. ")") or ""))
+                if prompt and prompt.Enabled then
+                    pcall(function()
+                        prompt.RequiresLineOfSight = false
+                        prompt.MaxActivationDistance = 999999
+                        prompt.HoldDuration = 0
+                    end)
+                    pcall(firePrompt, prompt)
+                end
             else
-                warn("[Convert TP & Balik] Masukkan ditolak/gagal | " .. text)
+                warn("[Masukkan Kotoran] Mesin convert tidak terdeteksi di workspace! Silakan klik 'Set Pos Convert' di tab Ternak.")
             end
         end
 
-        cb.convert()
-        return success
-    end
-
-    -- Masukkan kotoran ke mesin convert: menggunakan Radius jarak jauh tanpa usah TP ke mesin
-    local function convertNow()
-        -- Jika mode Auto TP sengaja dinyalakan, gunakan metode teleportasi balik
-        if ConvertState.AutoTP then
-            return doTeleportConvertAndReturn()
-        end
-
-        -- Mode Default: Tanpa TP ke mesin convert (memasukkan langsung dari radius jarak jauh)
-        if ConvertState.Busy then return false end
-        if os.clock() - ConvertState.Last < ConvertConfig.MinGap then return false end
-
-        ConvertState.Busy = true
-        ConvertState.Last = os.clock()
-
-        -- Cek jarak radius ke mesin convert (jika mesin terdeteksi)
-        local machineObj, machinePos = findConvertMachine()
-        local char = LocalPlayer.Character
-        local hrp = char and char:FindFirstChild("HumanoidRootPart")
-        local driveModel = findDriveTraktor()
-        local myPos = (driveModel and driveModel:GetPivot().Position) or (hrp and hrp.Position)
-
-        if machinePos and myPos and ConvertState.Radius > 0 then
-            local dist = (machinePos - myPos).Magnitude
-            if dist > ConvertState.Radius then
-                warn(string.format("[Convert] Mesin di luar radius (%.1f > %d studs)", dist, ConvertState.Radius))
-                ConvertState.Busy = false
-                return false
-            end
-        end
-
-        -- Bypass ProximityPrompt pada mesin convert dari jarak jauh jika ada
-        if machineObj then
-            local prompt = machineObj:IsA("ProximityPrompt") and machineObj or machineObj:FindFirstChildWhichIsA("ProximityPrompt", true)
-            if prompt and prompt.Enabled then
-                pcall(function()
-                    prompt.RequiresLineOfSight = false
-                    prompt.MaxActivationDistance = 999999
-                    prompt.HoldDuration = 0
-                    firePrompt(prompt)
-                end)
-            end
-        end
-
-        -- Pemanggilan Remote:
-        -- local Event = game:GetService("ReplicatedStorage").NKSystem.Packages.Knit.Services.ConvertService.RF.Masukkan
-        -- local Result = table.pack(Event:InvokeServer())
-        -- local ExpectedResult = table.unpack({ { } })
-        local okCall, resPack = pcall(function()
-            local Event = nil
-            pcall(function()
-                Event = game:GetService("ReplicatedStorage").NKSystem.Packages.Knit.Services.ConvertService.RF.Masukkan
-            end)
-            if not Event then
-                Event = getConvertRemote()
-            end
-            if not Event then return nil end
-            return table.pack(Event:InvokeServer())
+        local okCall, result = pcall(function()
+            local Event = game:GetService("ReplicatedStorage").NKSystem.Packages.Knit.Services.ConvertService.RF.Masukkan
+            return Event:InvokeServer()
         end)
-        ConvertState.Busy = false
 
-        local result = (okCall and resPack and resPack.n and resPack.n > 0) and resPack[1] or nil
-        -- Dianggap berhasil bila balasan berupa tabel {} (sesuai ExpectedResult) atau nilai non-false
         local success = okCall and result ~= nil and result ~= false
         if success and type(result) == "table" and result.ok == false then
             success = false
         end
-        if success and type(result) == "table" and result.n then
-            ConvertState.LastAmount = result.n
-        end
 
         if success then
-            ConvertState.Count += 1
+            MasukkanState.Count += 1
+            MasukkanState.Tank = nil -- tunggu data tangki baru dari event Berubah
         else
-            ConvertState.Fail += 1
+            MasukkanState.Fail += 1
         end
 
-        if ConvertState.LastSuccess ~= success then
-            ConvertState.LastSuccess = success
-            local text = okCall and summarizeResult(result) or tostring(result)
+        if MasukkanState.Last ~= success then
+            MasukkanState.Last = success
             if success then
-                print(string.format("[Convert Radius (Tanpa TP)] Masukkan OK | %s%s",
-                    text, ConvertState.LastAmount and (" (n=" .. tostring(ConvertState.LastAmount) .. ")") or ""))
+                print("[Masukkan Kotoran] OK - Berhasil convert kotoran!")
             else
-                warn("[Convert Radius (Tanpa TP)] Masukkan ditolak/gagal | " .. text)
+                warn("[Masukkan Kotoran] Gagal/ditolak server | " .. tostring(result))
             end
         end
 
-        cb.convert()
+        -- Balik lagi ke tempat semula setelah convert
+        if didTeleport and prevCFrame then
+            task.wait(MasukkanConfig.ReturnDelay)
+            print("[Masukkan Kotoran] Balik lagi ke tempat sebelumnya...")
+            if seated and traktor and traktor.Parent and isSeatedIn(traktor) then
+                traktor:PivotTo(prevCFrame)
+                local root = traktor.PrimaryPart or traktor:FindFirstChildWhichIsA("BasePart", true)
+                if root then
+                    root.AssemblyLinearVelocity = Vector3.zero
+                    root.AssemblyAngularVelocity = Vector3.zero
+                end
+            else
+                safeTeleport(prevCFrame.Position)
+            end
+            task.wait(0.2)
+        end
+
+        MasukkanState.Busy = false
+        cb.masukkan()
         return success
     end
 
-    -- ----- Listener event TraktorService.RE.Berubah -----
-    -- Server mengirim state traktor tiap berubah: { tangki, kapasitasTangki, muatan, kapasitas, ... }
-    -- Tangki penuh bila tangki >= kapasitasTangki. Saat penuh -> otomatis Masukkan ke mesin convert.
-    local function connectTankEvent()
-        if ConvertState.EventConn then return true end
+    local function tankReady()
+        local tank = MasukkanState.Tank
+        return tank ~= nil and tank >= MasukkanConfig.TankThreshold
+    end
+
+    -- Listener TraktorService.RE.Berubah: server mengirim isi tangki tiap berubah
+    local function connectMasukkanTank()
+        if MasukkanState.EventConn then return true end
         local re = getTraktorRemote("RE", "Berubah")
         if not re then
-            warn("[Convert] Remote TraktorService.RE.Berubah tidak ditemukan")
+            warn("[Masukkan Kotoran] Remote TraktorService.RE.Berubah tidak ditemukan")
             return false
         end
 
-        ConvertState.EventConn = re.OnClientEvent:Connect(function(data)
+        MasukkanState.EventConn = re.OnClientEvent:Connect(function(data)
             if type(data) ~= "table" then return end
-
             local tank = tonumber(data.tangki) or tonumber(data.muatan)
-            local cap = tonumber(data.kapasitasTangki) or tonumber(data.kapasitas)
-            if not tank or not cap or cap <= 0 then return end
+            if not tank then return end
 
-            ConvertState.EventTank = tank
-            ConvertState.EventCap = cap
-            ConvertState.EventRatio = tank / cap
-            cb.convert()
+            MasukkanState.Tank = tank
+            cb.masukkan()
 
-            if ConvertState.EventRatio < ConvertConfig.FullThreshold - 0.001 then return end
-            if not ConvertState.Running or not isScriptRunning then return end
-            if ConvertConfig.OnlyWhenDriving and not drivingNow() then return end
+            if not MasukkanState.Running or not isScriptRunning then return end
+            if tank < MasukkanConfig.TankThreshold then return end
+            if os.clock() - MasukkanState.LastTrigger < MasukkanConfig.Debounce then return end
 
-            local now = os.clock()
-            if now - ConvertState.LastEventTrigger < ConvertConfig.TankEventDebounce then return end
-            ConvertState.LastEventTrigger = now
-
-            print(string.format("[Convert] Tangki PENUH (%d/%d) -> Masukkan kotoran ke mesin convert", tank, cap))
-            task.spawn(function()
-                if convertNow() then
-                    -- Tunggu event Berubah berikutnya (tangki kosong) sebagai data baru
-                    ConvertState.EventRatio = nil
-                end
-            end)
+            print(string.format("[Masukkan Kotoran] Tangki %d/%d tercapai -> TP ke Convert & masukkan", tank, MasukkanConfig.TankThreshold))
+            task.spawn(masukkanKotoran)
         end)
         return true
     end
 
-    local function disconnectTankEvent()
-        if ConvertState.EventConn then
-            ConvertState.EventConn:Disconnect()
-            ConvertState.EventConn = nil
+    local function disconnectMasukkanTank()
+        if MasukkanState.EventConn then
+            MasukkanState.EventConn:Disconnect()
+            MasukkanState.EventConn = nil
         end
-        ConvertState.EventRatio = nil
+        MasukkanState.Tank = nil
     end
 
-    if ConvertConfig.UseTankEvent then
-        task.spawn(connectTankEvent)
-    end
-
-    local function startConvertWorker()
-        if convertThread then return end
-        convertThread = task.spawn(function()
-            while ConvertState.Running and isScriptRunning do
-                local waitTime = ConvertConfig.Interval
-                if not ConvertConfig.OnlyWhenDriving or drivingNow() then
-                    if ConvertConfig.OnlyWhenFull then
-                        waitTime = ConvertConfig.CheckInterval
-                        if shouldConvert() and not convertNow() then
-                            waitTime = ConvertConfig.RetryGap
-                        end
-                    else
-                        convertNow()
-                    end
+    local function startMasukkanWorker()
+        if masukkanThread then return end
+        masukkanThread = task.spawn(function()
+            connectMasukkanTank()
+            -- Cadangan: bila tangki sudah >= 300 tapi Masukkan gagal, coba ulang tiap Interval
+            while MasukkanState.Running and isScriptRunning do
+                if tankReady() and not MasukkanState.Busy then
+                    masukkanKotoran()
                 end
-                task.wait(waitTime)
+                task.wait(MasukkanConfig.Interval)
             end
-            convertThread = nil
+            masukkanThread = nil
         end)
     end
 
-    local function stopConvertWorker()
-        ConvertState.Running = false
-        if convertThread then
-            task.cancel(convertThread)
-            convertThread = nil
+    local function stopMasukkanWorker()
+        MasukkanState.Running = false
+        if masukkanThread then
+            task.cancel(masukkanThread)
+            masukkanThread = nil
         end
+        disconnectMasukkanTank()
     end
 
     -- ========================================================
@@ -2542,31 +2179,6 @@ local TernakHub = (function()
 
     local dungThread = nil
 
-    -- Posisi umum sebuah objek (Part / Model / Attachment / Prompt / Folder)
-    local function objPosition(obj)
-        if obj:IsA("BasePart") then return obj.Position end
-        if obj:IsA("Attachment") then return obj.WorldPosition end
-        if obj:IsA("ProximityPrompt") then return promptPosition(obj) end
-        if obj:IsA("Model") then
-            local ok, cf = pcall(function() return obj:GetPivot() end)
-            if ok and cf then return cf.Position end
-        end
-        local sum, n = Vector3.zero, 0
-        for _, d in ipairs(obj:GetDescendants()) do
-            if d:IsA("BasePart") then
-                sum += d.Position
-                n += 1
-            end
-        end
-        return n > 0 and sum / n or nil
-    end
-
-    local function isSeatedIn(model)
-        local char = LocalPlayer.Character
-        local hum = char and char:FindFirstChildOfClass("Humanoid")
-        local seat = hum and hum.SeatPart
-        return seat ~= nil and seat:IsDescendantOf(model)
-    end
 
     -- Pindai kotoran: milik sendiri > nama persis > terdekat dari posisi traktor
     local function scanDung(fromPos)
@@ -2872,7 +2484,10 @@ local TernakHub = (function()
     end
 
     local function routeTick(model)
-        if ConvertState.Busy then return end
+        if MasukkanState.Busy then
+            task.wait(0.1)
+            return
+        end
         local pos = model:GetPivot().Position
 
         -- Prioritas 1: kotoran yang terdeteksi
@@ -2887,13 +2502,6 @@ local TernakHub = (function()
                         DungState.Target = nil
                         DungState.Collected += 1
                         cb.dung()
-                        if ConvertState.Running then
-                            task.delay(ConvertConfig.TriggerDelay, function()
-                                if not ConvertConfig.OnlyWhenFull or shouldConvert() then
-                                    convertNow()
-                                end
-                            end)
-                        end
                     end
                     return
                 end
@@ -3064,9 +2672,9 @@ local TernakHub = (function()
         cb = cb,
         PakanConfig = PakanConfig, PakanState = PakanState,
         startPakanWorker = startPakanWorker, stopPakanWorker = stopPakanWorker,
-        ConvertState = ConvertState,
-        startConvertWorker = startConvertWorker, stopConvertWorker = stopConvertWorker,
-        doTeleportConvertAndReturn = doTeleportConvertAndReturn,
+        MasukkanState = MasukkanState, MasukkanConfig = MasukkanConfig,
+        startMasukkanWorker = startMasukkanWorker, stopMasukkanWorker = stopMasukkanWorker,
+        findDriveTraktor = findDriveTraktor,
         TraktorState = TraktorState,
         startTraktorSpawnWorker = startTraktorSpawnWorker, stopTraktorSpawnWorker = stopTraktorSpawnWorker,
         startTraktorDriveWorker = startTraktorDriveWorker, stopTraktorDriveWorker = stopTraktorDriveWorker,
@@ -3078,8 +2686,7 @@ local TernakHub = (function()
         stopAll = function()
             pcall(stopTraktorSpawnWorker)
             pcall(stopTraktorDriveWorker)
-            pcall(stopConvertWorker)
-            pcall(disconnectTankEvent)
+            pcall(stopMasukkanWorker)
             pcall(stopPakanWorker)
             pcall(stopDungWorker)
             pcall(stopRouteWorker)
@@ -4253,15 +3860,15 @@ TernakPage.BackgroundTransparency = 1
 TernakPage.Visible = false
 TernakPage.ScrollBarThickness = 3
 TernakPage.ScrollBarImageColor3 = Color3.fromRGB(80, 85, 110)
-TernakPage.CanvasSize = UDim2.new(0, 0, 0, 390)
+TernakPage.CanvasSize = UDim2.new(0, 0, 0, 370)
 TernakPage.BorderSizePixel = 0
 TernakPage.Parent = ContentFrame
 
 local function buildTernakPage()
     local H = TernakHub
     local TraktorState = H.TraktorState
-    local ConvertState, startConvertWorker, stopConvertWorker = H.ConvertState, H.startConvertWorker, H.stopConvertWorker
-    local doTeleportConvertAndReturn = H.doTeleportConvertAndReturn
+    local MasukkanConfig, MasukkanState = H.MasukkanConfig, H.MasukkanState
+    local startMasukkanWorker, stopMasukkanWorker = H.startMasukkanWorker, H.stopMasukkanWorker
     local startTraktorSpawnWorker, stopTraktorSpawnWorker = H.startTraktorSpawnWorker, H.stopTraktorSpawnWorker
     local startTraktorDriveWorker, stopTraktorDriveWorker = H.startTraktorDriveWorker, H.stopTraktorDriveWorker
     local DungState, startDungWorker, stopDungWorker = H.DungState, H.startDungWorker, H.stopDungWorker
@@ -4388,132 +3995,117 @@ local function buildTernakPage()
         end
     end))
 
-    -- Card: Auto Masukkan Kotoran & TP Convert (Terpisah & Radius Jarak Jauh)
-    local convertCard = createModernCard(TernakPage, 94, 82)
+    -- Card: Auto Masukin Kotoran Domba ke Mesin Convert + Auto TP ke Mesin
+    local masukkanCard = createModernCard(TernakPage, 68, 82)
 
-    local convertLbl = Instance.new("TextLabel")
-    convertLbl.Size = UDim2.new(1, -60, 0, 20)
-    convertLbl.Position = UDim2.new(0, 8, 0, 4)
-    convertLbl.BackgroundTransparency = 1
-    convertLbl.Font = Enum.Font.GothamBold
-    convertLbl.Text = "♻️ Auto Masukin Kotoran"
-    convertLbl.TextColor3 = Color3.fromRGB(230, 230, 245)
-    convertLbl.TextSize = 9
-    convertLbl.TextTruncate = Enum.TextTruncate.AtEnd
-    convertLbl.TextXAlignment = Enum.TextXAlignment.Left
-    convertLbl.Parent = convertCard
+    local masukkanLbl = Instance.new("TextLabel")
+    masukkanLbl.Size = UDim2.new(1, -70, 0, 20)
+    masukkanLbl.Position = UDim2.new(0, 8, 0, 6)
+    masukkanLbl.BackgroundTransparency = 1
+    masukkanLbl.Font = Enum.Font.GothamBold
+    masukkanLbl.Text = "🐑 Masukin Kotoran (tangki ? | 0 ok | 0 gagal)"
+    masukkanLbl.TextColor3 = Color3.fromRGB(230, 230, 245)
+    masukkanLbl.TextSize = 9
+    masukkanLbl.TextTruncate = Enum.TextTruncate.AtEnd
+    masukkanLbl.TextXAlignment = Enum.TextXAlignment.Left
+    masukkanLbl.Parent = masukkanCard
 
-    local convertBtn = Instance.new("TextButton")
-    convertBtn.Size = UDim2.new(0, 44, 0, 20)
-    convertBtn.Position = UDim2.new(1, -52, 0, 4)
-    convertBtn.BackgroundColor3 = Color3.fromRGB(45, 48, 65)
-    convertBtn.BorderSizePixel = 0
-    convertBtn.Font = Enum.Font.GothamBold
-    convertBtn.Text = "OFF"
-    convertBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
-    convertBtn.TextSize = 9
-    convertBtn.AutoButtonColor = false
-    convertBtn.Parent = convertCard
-    Instance.new("UICorner", convertBtn).CornerRadius = UDim.new(0, 6)
+    local masukkanBtn = Instance.new("TextButton")
+    masukkanBtn.Size = UDim2.new(0, 44, 0, 20)
+    masukkanBtn.Position = UDim2.new(1, -52, 0, 6)
+    masukkanBtn.BackgroundColor3 = Color3.fromRGB(45, 48, 65)
+    masukkanBtn.BorderSizePixel = 0
+    masukkanBtn.Font = Enum.Font.GothamBold
+    masukkanBtn.Text = "OFF"
+    masukkanBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+    masukkanBtn.TextSize = 9
+    masukkanBtn.AutoButtonColor = false
+    masukkanBtn.Parent = masukkanCard
+    Instance.new("UICorner", masukkanBtn).CornerRadius = UDim.new(0, 6)
 
-    -- Sakelar Opsional: Mode TP Mesin (Default OFF agar tidak usah TP ke mesin convert)
-    local tpReturnLbl = Instance.new("TextLabel")
-    tpReturnLbl.Size = UDim2.new(1, -60, 0, 20)
-    tpReturnLbl.Position = UDim2.new(0, 8, 0, 26)
-    tpReturnLbl.BackgroundTransparency = 1
-    tpReturnLbl.Font = Enum.Font.GothamBold
-    tpReturnLbl.Text = "⚡ Mode TP Mesin (Opsional)"
-    tpReturnLbl.TextColor3 = Color3.fromRGB(230, 230, 245)
-    tpReturnLbl.TextSize = 9
-    tpReturnLbl.TextTruncate = Enum.TextTruncate.AtEnd
-    tpReturnLbl.TextXAlignment = Enum.TextXAlignment.Left
-    tpReturnLbl.Parent = convertCard
+    -- Baris 2: Auto TP Convert & Set Posisi Convert
+    local tpConvertLbl = Instance.new("TextLabel")
+    tpConvertLbl.Size = UDim2.new(0.5, -45, 0, 20)
+    tpConvertLbl.Position = UDim2.new(0, 8, 0, 36)
+    tpConvertLbl.BackgroundTransparency = 1
+    tpConvertLbl.Font = Enum.Font.GothamBold
+    tpConvertLbl.Text = "⚡ Auto TP Convert"
+    tpConvertLbl.TextColor3 = Color3.fromRGB(200, 205, 225)
+    tpConvertLbl.TextSize = 9
+    tpConvertLbl.TextTruncate = Enum.TextTruncate.AtEnd
+    tpConvertLbl.TextXAlignment = Enum.TextXAlignment.Left
+    tpConvertLbl.Parent = masukkanCard
 
-    local tpReturnBtn = Instance.new("TextButton")
-    tpReturnBtn.Size = UDim2.new(0, 44, 0, 20)
-    tpReturnBtn.Position = UDim2.new(1, -52, 0, 26)
-    tpReturnBtn.BackgroundColor3 = Color3.fromRGB(45, 48, 65)
-    tpReturnBtn.BorderSizePixel = 0
-    tpReturnBtn.Font = Enum.Font.GothamBold
-    tpReturnBtn.Text = ConvertState.AutoTP and "ON" or "OFF"
-    tpReturnBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
-    tpReturnBtn.TextSize = 9
-    tpReturnBtn.AutoButtonColor = false
-    tpReturnBtn.Parent = convertCard
-    Instance.new("UICorner", tpReturnBtn).CornerRadius = UDim.new(0, 6)
-    paintSwitch(tpReturnBtn, ConvertState.AutoTP)
+    local tpConvertBtn = Instance.new("TextButton")
+    tpConvertBtn.Size = UDim2.new(0, 38, 0, 20)
+    tpConvertBtn.Position = UDim2.new(0.5, -38, 0, 36)
+    tpConvertBtn.BackgroundColor3 = MasukkanConfig.AutoTeleport and Color3.fromRGB(16, 185, 129) or Color3.fromRGB(45, 48, 65)
+    tpConvertBtn.BorderSizePixel = 0
+    tpConvertBtn.Font = Enum.Font.GothamBold
+    tpConvertBtn.Text = MasukkanConfig.AutoTeleport and "ON" or "OFF"
+    tpConvertBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+    tpConvertBtn.TextSize = 9
+    tpConvertBtn.AutoButtonColor = false
+    tpConvertBtn.Parent = masukkanCard
+    Instance.new("UICorner", tpConvertBtn).CornerRadius = UDim.new(0, 6)
 
-    -- Info Radius (Tanpa perlu TP ke mesin convert)
-    local radiusInfoLbl = Instance.new("TextLabel")
-    radiusInfoLbl.Size = UDim2.new(1, -16, 0, 18)
-    radiusInfoLbl.Position = UDim2.new(0, 8, 0, 48)
-    radiusInfoLbl.BackgroundTransparency = 1
-    radiusInfoLbl.Font = Enum.Font.Gotham
-    radiusInfoLbl.Text = string.format("📡 Radius: %d studs (Tanpa usah TP ke mesin)", ConvertState.Radius)
-    radiusInfoLbl.TextColor3 = Color3.fromRGB(150, 180, 225)
-    radiusInfoLbl.TextSize = 8.5
-    radiusInfoLbl.TextTruncate = Enum.TextTruncate.AtEnd
-    radiusInfoLbl.TextXAlignment = Enum.TextXAlignment.Left
-    radiusInfoLbl.Parent = convertCard
+    table.insert(Connections, tpConvertBtn.Activated:Connect(function()
+        MasukkanConfig.AutoTeleport = not MasukkanConfig.AutoTeleport
+        paintSwitch(tpConvertBtn, MasukkanConfig.AutoTeleport)
+    end))
 
-    -- Tombol Manual Instan: Masukkan Sekarang (Langsung dari jarak jauh tanpa TP)
-    local instantBtn = Instance.new("TextButton")
-    instantBtn.Size = UDim2.new(1, -16, 0, 20)
-    instantBtn.Position = UDim2.new(0, 8, 0, 68)
-    instantBtn.BackgroundColor3 = Color3.fromRGB(36, 40, 58)
-    instantBtn.BorderSizePixel = 0
-    instantBtn.Font = Enum.Font.GothamBold
-    instantBtn.Text = "📍 Masukkan Sekarang (Langsung via Radius)"
-    instantBtn.TextColor3 = Color3.fromRGB(200, 220, 255)
-    instantBtn.TextSize = 9
-    instantBtn.AutoButtonColor = true
-    instantBtn.Parent = convertCard
-    Instance.new("UICorner", instantBtn).CornerRadius = UDim.new(0, 6)
+    local setPosBtn = Instance.new("TextButton")
+    setPosBtn.Size = UDim2.new(0.5, -16, 0, 20)
+    setPosBtn.Position = UDim2.new(0.5, 6, 0, 36)
+    setPosBtn.BackgroundColor3 = Color3.fromRGB(35, 38, 55)
+    setPosBtn.BorderSizePixel = 0
+    setPosBtn.Font = Enum.Font.GothamBold
+    setPosBtn.Text = "📍 Set Pos Convert"
+    setPosBtn.TextColor3 = Color3.fromRGB(130, 210, 255)
+    setPosBtn.TextSize = 8.5
+    setPosBtn.AutoButtonColor = false
+    setPosBtn.Parent = masukkanCard
+    Instance.new("UICorner", setPosBtn).CornerRadius = UDim.new(0, 6)
 
-    local function tankText()
-        local lv = ConvertState.TankLevel
-        if lv then return string.format("%d%%", math.floor(lv * 100 + 0.5)) end
-        if ConvertState.TankStatus == "full" then return "penuh" end
-        if ConvertState.TankStatus == "notfull" then return "belum penuh" end
-        return "?"
-    end
-
-    H.cb.convert = function()
-        local amtText = ConvertState.LastAmount and string.format(" (+%s)", tostring(ConvertState.LastAmount)) or ""
-        convertLbl.Text = string.format("♻️ Auto Convert (%d ok%s | %d gagal | tangki %s)",
-            ConvertState.Count, amtText, ConvertState.Fail, tankText())
-        tpReturnLbl.Text = string.format("⚡ Mode TP Mesin (%s)",
-            ConvertState.AutoTP and "Aktif" or "Nonaktif (Radius)")
-        radiusInfoLbl.Text = string.format("📡 Radius: %d studs (Tanpa usah TP ke mesin)", ConvertState.Radius)
-    end
-
-    table.insert(Connections, convertBtn.Activated:Connect(function()
-        ConvertState.Running = not ConvertState.Running
-        paintSwitch(convertBtn, ConvertState.Running)
-        if ConvertState.Running then
-            startConvertWorker()
+    table.insert(Connections, setPosBtn.Activated:Connect(function()
+        local traktor = H.findDriveTraktor and H.findDriveTraktor()
+        local char = LocalPlayer.Character
+        local hrp = char and char:FindFirstChild("HumanoidRootPart")
+        local pos = (traktor and traktor:GetPivot().Position) or (hrp and hrp.Position)
+        if pos then
+            MasukkanConfig.ConvertPos = pos
+            MasukkanState.SavedConvertPos = pos
+            setPosBtn.Text = "✅ Pos Disimpan!"
+            setPosBtn.TextColor3 = Color3.fromRGB(52, 211, 153)
+            print(string.format("[Masukkan Kotoran] Posisi mesin convert diset manual ke (%.1f, %.1f, %.1f)", pos.X, pos.Y, pos.Z))
+            task.delay(2.5, function()
+                if setPosBtn and setPosBtn.Parent then
+                    setPosBtn.Text = "📍 Set Pos Convert"
+                    setPosBtn.TextColor3 = Color3.fromRGB(130, 210, 255)
+                end
+            end)
         else
-            stopConvertWorker()
+            warn("[Masukkan Kotoran] Gagal membaca posisi karakter / traktor")
         end
     end))
 
-    table.insert(Connections, tpReturnBtn.Activated:Connect(function()
-        ConvertState.AutoTP = not ConvertState.AutoTP
-        paintSwitch(tpReturnBtn, ConvertState.AutoTP)
-        H.cb.convert()
-    end))
+    H.cb.masukkan = function()
+        local tankTxt = MasukkanState.Tank and string.format("%d/%d", MasukkanState.Tank, MasukkanConfig.TankThreshold) or "?"
+        masukkanLbl.Text = string.format("🐑 Masukin Kotoran (tangki %s | %d ok | %d gagal)", tankTxt, MasukkanState.Count, MasukkanState.Fail)
+    end
 
-    table.insert(Connections, instantBtn.Activated:Connect(function()
-        instantBtn.Text = "⏳ Sedang Memasukkan..."
-        local ok = convertNow()
-        instantBtn.Text = ok and "✔ Berhasil Dimasukkan!" or "✖ Gagal Masuk"
-        task.delay(1.5, function()
-            instantBtn.Text = "📍 Masukkan Sekarang (Langsung via Radius)"
-        end)
+    table.insert(Connections, masukkanBtn.Activated:Connect(function()
+        MasukkanState.Running = not MasukkanState.Running
+        paintSwitch(masukkanBtn, MasukkanState.Running)
+        if MasukkanState.Running then
+            startMasukkanWorker()
+        else
+            stopMasukkanWorker()
+        end
     end))
 
     -- Card: Rute Plot 8 (Kandang_1 .. Kandang_8), terpisah dari rute awal
-    local plot8Card = createModernCard(TernakPage, 76, 184)
+    local plot8Card = createModernCard(TernakPage, 76, 158)
     local prof2 = RouteConfig.Profiles[2]
 
     local plot8Lbl = Instance.new("TextLabel")
@@ -4576,7 +4168,7 @@ local function buildTernakPage()
     end
 
     -- Card: Rute Pakan (palung_1 -> palung_2): traktor ke tempat pakan lalu kasih pakan
-    local pakanCard = createModernCard(TernakPage, 54, 266)
+    local pakanCard = createModernCard(TernakPage, 54, 240)
     local profPakan = RouteConfig.Profiles[3]
 
     local pakanRouteLbl = Instance.new("TextLabel")
@@ -4636,7 +4228,7 @@ local function buildTernakPage()
     end
 
     -- Card: Auto Kasih Pakan berkala (IsiPakan(1) lalu IsiPakan(2), tanpa pindah posisi)
-    local feedCard = createModernCard(TernakPage, 56, 326)
+    local feedCard = createModernCard(TernakPage, 56, 300)
 
     local feedLbl = Instance.new("TextLabel")
     feedLbl.Size = UDim2.new(1, -76, 0, 20)
