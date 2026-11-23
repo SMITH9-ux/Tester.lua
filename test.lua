@@ -2089,8 +2089,143 @@ local TernakHub = (function()
         return success
     end
 
+    -- ========================================================
+    -- DETEKSI TANGKI TRAKTOR (MULTI-SOURCE: REMOTE, UI, MODEL, ATTR)
+    -- ========================================================
+    local TANK_KEYWORDS = { "tangki", "muatan", "kotoran", "tank", "dung", "kapasitas" }
+
+    -- Ekstraksi angka isi tangki dari berbagai format data
+    local function parseTankValue(raw)
+        if type(raw) == "number" then
+            return raw
+        end
+        if type(raw) == "string" then
+            local cur = string.match(raw, "(%d+)%s*/%s*%d+")
+            if cur then return tonumber(cur) end
+            local n = string.match(raw, "(%d+)")
+            if n then return tonumber(n) end
+            return nil
+        end
+        if type(raw) == "table" then
+            local fields = { "tangki", "muatan", "isi", "kotoran", "tank", "amount", "current", "value", "val", "count", "kapasitas" }
+            for _, f in ipairs(fields) do
+                local v = raw[f] or raw[string.upper(string.sub(f, 1, 1)) .. string.sub(f, 2)]
+                if v ~= nil then
+                    local parsed = parseTankValue(v)
+                    if parsed ~= nil then return parsed end
+                end
+            end
+            for k, v in pairs(raw) do
+                local lk = string.lower(tostring(k))
+                for _, kw in ipairs(TANK_KEYWORDS) do
+                    if string.find(lk, kw, 1, true) then
+                        local parsed = parseTankValue(v)
+                        if parsed ~= nil then return parsed end
+                    end
+                end
+            end
+        end
+        return nil
+    end
+
+    -- Deteksi aktif isi tangki traktor dari UI, Model Traktor, Attributes, & Values
+    local function readTraktorTank()
+        -- 1. Baca dari UI layar (PlayerGui): HUD Traktor / status tangki
+        for _, obj in ipairs(PlayerGui:GetDescendants()) do
+            if (obj:IsA("TextLabel") or obj:IsA("TextButton")) and obj.Text ~= "" and guiShown(obj) then
+                local text = string.lower(obj.Text)
+                local name = string.lower(obj.Name)
+                local isTankRelated = false
+                for _, kw in ipairs(TANK_KEYWORDS) do
+                    if string.find(text, kw, 1, true) or string.find(name, kw, 1, true) then
+                        isTankRelated = true
+                        break
+                    end
+                end
+
+                if isTankRelated then
+                    local cur = string.match(text, "(%d+)%s*/%s*%d+")
+                    if cur then return tonumber(cur), "UI" end
+                    for _, kw in ipairs(TANK_KEYWORDS) do
+                        local n = string.match(text, kw .. "%D*(%d+)")
+                        if n then return tonumber(n), "UI" end
+                    end
+                end
+            end
+        end
+
+        -- 2. Baca dari Model Traktor (Attributes, Children, dan BillboardGui/SurfaceGui)
+        local traktor = findDriveTraktor()
+        if traktor then
+            local okAttr, attrs = pcall(function() return traktor:GetAttributes() end)
+            if okAttr and attrs then
+                for k, v in pairs(attrs) do
+                    local lk = string.lower(tostring(k))
+                    for _, kw in ipairs(TANK_KEYWORDS) do
+                        if string.find(lk, kw, 1, true) then
+                            local parsed = parseTankValue(v)
+                            if parsed ~= nil then return parsed, "TraktorAttr" end
+                        end
+                    end
+                end
+            end
+
+            for _, child in ipairs(traktor:GetDescendants()) do
+                if child:IsA("ValueBase") then
+                    local lc = string.lower(child.Name)
+                    for _, kw in ipairs(TANK_KEYWORDS) do
+                        if string.find(lc, kw, 1, true) then
+                            local parsed = parseTankValue(child.Value)
+                            if parsed ~= nil then return parsed, "TraktorVal" end
+                        end
+                    end
+                elseif child:IsA("TextLabel") and child.Text ~= "" then
+                    local text = string.lower(child.Text)
+                    local cur = string.match(text, "(%d+)%s*/%s*%d+")
+                    if cur then return tonumber(cur), "TraktorGui" end
+                end
+            end
+        end
+
+        -- 3. Baca dari Attributes / leaderstats LocalPlayer
+        local okPAttr, pAttrs = pcall(function() return LocalPlayer:GetAttributes() end)
+        if okPAttr and pAttrs then
+            for k, v in pairs(pAttrs) do
+                local lk = string.lower(tostring(k))
+                for _, kw in ipairs(TANK_KEYWORDS) do
+                    if string.find(lk, kw, 1, true) then
+                        local parsed = parseTankValue(v)
+                        if parsed ~= nil then return parsed, "PlayerAttr" end
+                    end
+                end
+            end
+        end
+
+        for _, child in ipairs(LocalPlayer:GetDescendants()) do
+            if child:IsA("ValueBase") then
+                local lc = string.lower(child.Name)
+                for _, kw in ipairs(TANK_KEYWORDS) do
+                    if string.find(lc, kw, 1, true) then
+                        local parsed = parseTankValue(child.Value)
+                        if parsed ~= nil then return parsed, "PlayerVal" end
+                    end
+                end
+            end
+        end
+
+        return nil, nil
+    end
+
     local function tankReady()
         local tank = MasukkanState.Tank
+        if tank == nil then
+            local detected = readTraktorTank()
+            if detected ~= nil then
+                MasukkanState.Tank = detected
+                tank = detected
+                cb.masukkan()
+            end
+        end
         return tank ~= nil and tank >= MasukkanConfig.TankThreshold
     end
 
@@ -2103,9 +2238,18 @@ local TernakHub = (function()
             return false
         end
 
-        MasukkanState.EventConn = re.OnClientEvent:Connect(function(data)
-            if type(data) ~= "table" then return end
-            local tank = tonumber(data.tangki) or tonumber(data.muatan)
+        MasukkanState.EventConn = re.OnClientEvent:Connect(function(...)
+            local args = { ... }
+            local tank = nil
+            for _, arg in ipairs(args) do
+                tank = parseTankValue(arg)
+                if tank ~= nil then break end
+            end
+
+            if not tank then
+                tank = readTraktorTank()
+            end
+
             if not tank then return end
 
             MasukkanState.Tank = tank
@@ -2133,8 +2277,14 @@ local TernakHub = (function()
         if masukkanThread then return end
         masukkanThread = task.spawn(function()
             connectMasukkanTank()
-            -- Cadangan: bila tangki sudah >= 300 tapi Masukkan gagal, coba ulang tiap Interval
+            -- Cadangan: perbarui tangki secara berkala bila belum ada event
             while MasukkanState.Running and isScriptRunning do
+                local liveTank = readTraktorTank()
+                if liveTank ~= nil and liveTank ~= MasukkanState.Tank then
+                    MasukkanState.Tank = liveTank
+                    cb.masukkan()
+                end
+
                 if tankReady() and not MasukkanState.Busy then
                     masukkanKotoran()
                 end
@@ -2674,6 +2824,7 @@ local TernakHub = (function()
         startPakanWorker = startPakanWorker, stopPakanWorker = stopPakanWorker,
         MasukkanState = MasukkanState, MasukkanConfig = MasukkanConfig,
         startMasukkanWorker = startMasukkanWorker, stopMasukkanWorker = stopMasukkanWorker,
+        readTraktorTank = readTraktorTank,
         findDriveTraktor = findDriveTraktor,
         TraktorState = TraktorState,
         startTraktorSpawnWorker = startTraktorSpawnWorker, stopTraktorSpawnWorker = stopTraktorSpawnWorker,
@@ -3860,7 +4011,7 @@ TernakPage.BackgroundTransparency = 1
 TernakPage.Visible = false
 TernakPage.ScrollBarThickness = 3
 TernakPage.ScrollBarImageColor3 = Color3.fromRGB(80, 85, 110)
-TernakPage.CanvasSize = UDim2.new(0, 0, 0, 370)
+TernakPage.CanvasSize = UDim2.new(0, 0, 0, 430)
 TernakPage.BorderSizePixel = 0
 TernakPage.Parent = ContentFrame
 
@@ -3996,7 +4147,7 @@ local function buildTernakPage()
     end))
 
     -- Card: Auto Masukin Kotoran Domba ke Mesin Convert + Auto TP ke Mesin
-    local masukkanCard = createModernCard(TernakPage, 68, 82)
+    local masukkanCard = createModernCard(TernakPage, 126, 82)
 
     local masukkanLbl = Instance.new("TextLabel")
     masukkanLbl.Size = UDim2.new(1, -70, 0, 20)
@@ -4026,7 +4177,7 @@ local function buildTernakPage()
     -- Baris 2: Auto TP Convert & Set Posisi Convert
     local tpConvertLbl = Instance.new("TextLabel")
     tpConvertLbl.Size = UDim2.new(0.5, -45, 0, 20)
-    tpConvertLbl.Position = UDim2.new(0, 8, 0, 36)
+    tpConvertLbl.Position = UDim2.new(0, 8, 0, 32)
     tpConvertLbl.BackgroundTransparency = 1
     tpConvertLbl.Font = Enum.Font.GothamBold
     tpConvertLbl.Text = "⚡ Auto TP Convert"
@@ -4038,7 +4189,7 @@ local function buildTernakPage()
 
     local tpConvertBtn = Instance.new("TextButton")
     tpConvertBtn.Size = UDim2.new(0, 38, 0, 20)
-    tpConvertBtn.Position = UDim2.new(0.5, -38, 0, 36)
+    tpConvertBtn.Position = UDim2.new(0.5, -38, 0, 32)
     tpConvertBtn.BackgroundColor3 = MasukkanConfig.AutoTeleport and Color3.fromRGB(16, 185, 129) or Color3.fromRGB(45, 48, 65)
     tpConvertBtn.BorderSizePixel = 0
     tpConvertBtn.Font = Enum.Font.GothamBold
@@ -4056,7 +4207,7 @@ local function buildTernakPage()
 
     local setPosBtn = Instance.new("TextButton")
     setPosBtn.Size = UDim2.new(0.5, -16, 0, 20)
-    setPosBtn.Position = UDim2.new(0.5, 6, 0, 36)
+    setPosBtn.Position = UDim2.new(0.5, 6, 0, 32)
     setPosBtn.BackgroundColor3 = Color3.fromRGB(35, 38, 55)
     setPosBtn.BorderSizePixel = 0
     setPosBtn.Font = Enum.Font.GothamBold
@@ -4089,10 +4240,104 @@ local function buildTernakPage()
         end
     end))
 
+    -- Baris 3 & 4: Setting Target Isi Tangki Convert (300, 500, 1000, 2000, 3000, 4000, 5000, Custom)
+    local targetLbl = Instance.new("TextLabel")
+    targetLbl.Size = UDim2.new(1, -16, 0, 14)
+    targetLbl.Position = UDim2.new(0, 8, 0, 56)
+    targetLbl.BackgroundTransparency = 1
+    targetLbl.Font = Enum.Font.GothamBold
+    targetLbl.Text = "🎯 TARGET ISI TANGKI CONVERT:"
+    targetLbl.TextColor3 = Color3.fromRGB(99, 102, 241)
+    targetLbl.TextSize = 8.5
+    targetLbl.TextXAlignment = Enum.TextXAlignment.Left
+    targetLbl.Parent = masukkanCard
+
+    local THRESHOLD_LIST = { 300, 500, 1000, 2000, 3000, 4000, 5000 }
+    local threshBtns = {}
+
+    local function refreshThreshButtons()
+        for val, btn in pairs(threshBtns) do
+            local isSel = (MasukkanConfig.TankThreshold == val)
+            btn.BackgroundColor3 = isSel and Color3.fromRGB(16, 185, 129) or Color3.fromRGB(35, 38, 55)
+            btn.TextColor3 = isSel and Color3.fromRGB(255, 255, 255) or Color3.fromRGB(180, 185, 205)
+        end
+        H.cb.masukkan()
+    end
+
+    for i, val in ipairs(THRESHOLD_LIST) do
+        local col = (i - 1) % 4
+        local row = math.floor((i - 1) / 4)
+
+        local tBtn = Instance.new("TextButton")
+        tBtn.Size = UDim2.new(0.25, -6, 0, 20)
+        tBtn.Position = UDim2.new(col * 0.25, 4, 0, 74 + row * 24)
+        tBtn.BackgroundColor3 = (MasukkanConfig.TankThreshold == val) and Color3.fromRGB(16, 185, 129) or Color3.fromRGB(35, 38, 55)
+        tBtn.BorderSizePixel = 0
+        tBtn.Font = Enum.Font.GothamBold
+        tBtn.Text = tostring(val)
+        tBtn.TextColor3 = (MasukkanConfig.TankThreshold == val) and Color3.fromRGB(255, 255, 255) or Color3.fromRGB(180, 185, 205)
+        tBtn.TextSize = 9
+        tBtn.AutoButtonColor = false
+        tBtn.Parent = masukkanCard
+        Instance.new("UICorner", tBtn).CornerRadius = UDim.new(0, 5)
+
+        threshBtns[val] = tBtn
+
+        table.insert(Connections, tBtn.Activated:Connect(function()
+            MasukkanConfig.TankThreshold = val
+            refreshThreshButtons()
+            print(string.format("[Masukkan Kotoran] Target isi tangki diubah ke %d", val))
+        end))
+    end
+
+    -- Slot ke-8: Custom TextBox
+    local customInput = Instance.new("TextBox")
+    customInput.Size = UDim2.new(0.25, -6, 0, 20)
+    customInput.Position = UDim2.new(3 * 0.25, 4, 0, 74 + 1 * 24)
+    customInput.BackgroundColor3 = Color3.fromRGB(28, 30, 44)
+    customInput.BorderSizePixel = 0
+    customInput.Font = Enum.Font.GothamMedium
+    customInput.PlaceholderText = "Custom..."
+    customInput.PlaceholderColor3 = Color3.fromRGB(110, 115, 135)
+    customInput.Text = ""
+    customInput.TextColor3 = Color3.fromRGB(130, 210, 255)
+    customInput.TextSize = 8.5
+    customInput.ClearTextOnFocus = false
+    customInput.Parent = masukkanCard
+    Instance.new("UICorner", customInput).CornerRadius = UDim.new(0, 5)
+
+    table.insert(Connections, customInput.FocusLost:Connect(function()
+        local num = tonumber(customInput.Text)
+        if num and num > 0 then
+            MasukkanConfig.TankThreshold = math.floor(num)
+            refreshThreshButtons()
+            print(string.format("[Masukkan Kotoran] Target isi tangki diubah ke %d (Custom)", MasukkanConfig.TankThreshold))
+        end
+    end))
+
     H.cb.masukkan = function()
-        local tankTxt = MasukkanState.Tank and string.format("%d/%d", MasukkanState.Tank, MasukkanConfig.TankThreshold) or "?"
+        local tankVal = MasukkanState.Tank
+        if tankVal == nil and H.readTraktorTank then
+            tankVal = H.readTraktorTank()
+            if tankVal ~= nil then MasukkanState.Tank = tankVal end
+        end
+        local tankTxt = tankVal and string.format("%d/%d", tankVal, MasukkanConfig.TankThreshold) or string.format("?/%d", MasukkanConfig.TankThreshold)
         masukkanLbl.Text = string.format("🐑 Masukin Kotoran (tangki %s | %d ok | %d gagal)", tankTxt, MasukkanState.Count, MasukkanState.Fail)
     end
+
+    -- Pembaruan berkala tampilan tangki traktor di GUI
+    task.spawn(function()
+        while isScriptRunning do
+            if H.readTraktorTank then
+                local liveTank = H.readTraktorTank()
+                if liveTank ~= nil and liveTank ~= MasukkanState.Tank then
+                    MasukkanState.Tank = liveTank
+                    H.cb.masukkan()
+                end
+            end
+            task.wait(1.5)
+        end
+    end)
 
     table.insert(Connections, masukkanBtn.Activated:Connect(function()
         MasukkanState.Running = not MasukkanState.Running
@@ -4105,7 +4350,7 @@ local function buildTernakPage()
     end))
 
     -- Card: Rute Plot 8 (Kandang_1 .. Kandang_8), terpisah dari rute awal
-    local plot8Card = createModernCard(TernakPage, 76, 158)
+    local plot8Card = createModernCard(TernakPage, 76, 216)
     local prof2 = RouteConfig.Profiles[2]
 
     local plot8Lbl = Instance.new("TextLabel")
@@ -4168,7 +4413,7 @@ local function buildTernakPage()
     end
 
     -- Card: Rute Pakan (palung_1 -> palung_2): traktor ke tempat pakan lalu kasih pakan
-    local pakanCard = createModernCard(TernakPage, 54, 240)
+    local pakanCard = createModernCard(TernakPage, 54, 298)
     local profPakan = RouteConfig.Profiles[3]
 
     local pakanRouteLbl = Instance.new("TextLabel")
@@ -4228,7 +4473,7 @@ local function buildTernakPage()
     end
 
     -- Card: Auto Kasih Pakan berkala (IsiPakan(1) lalu IsiPakan(2), tanpa pindah posisi)
-    local feedCard = createModernCard(TernakPage, 56, 300)
+    local feedCard = createModernCard(TernakPage, 56, 358)
 
     local feedLbl = Instance.new("TextLabel")
     feedLbl.Size = UDim2.new(1, -76, 0, 20)
