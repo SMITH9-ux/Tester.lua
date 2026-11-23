@@ -7,6 +7,7 @@
     ║  - Auto Clean: Remote Signal + Auto Prompt + TP Jarak Jauh    ║
     ║  - Anti-AFK: Cegah Kick Idle 20 Menit (Tombol Terpisah)       ║
     ║  - Alur Clean: Bersih > Tunggu Sampah > Ambil > Buang         ║
+║  - Anti-Detect: Jitter TP + Random Delay + Rate Limit         ║
     ║  - Kompatibel multi-executor (fallback otomatis)              ║
     ║  - Auto Acc Penyewa + Spin Gratis saat 10 Penyewa (Terpisah)  ║
     ║  - High-End Glassmorphism UI with UIGradient & Micro-Tweens   ║
@@ -245,7 +246,8 @@ local function safeTeleport(targetPos: Vector3)
             hrp.AssemblyLinearVelocity = Vector3.zero
             hrp.AssemblyAngularVelocity = Vector3.zero
         end)
-        hrp.CFrame = CFrame.new(targetPos + Vector3.new(0, 3, 0))
+        local _adPos = (AntiDetect and AntiDetect.cfg.Enabled) and AntiDetect.jitterPos(targetPos) or targetPos
+        hrp.CFrame = CFrame.new(_adPos + Vector3.new(0, 3, 0))
     end
 end
 
@@ -778,7 +780,7 @@ local function executePlantCycle()
         end
     end
 
-    task.wait(PlantConfig.INTER_ACTION_DELAY)
+    task.wait((AntiDetect and AntiDetect.cfg.Enabled) and AntiDetect.jitterDelay(PlantConfig.INTER_ACTION_DELAY) or PlantConfig.INTER_ACTION_DELAY)
 
     for index, plotPos in ipairs(activePlots) do
         if not isPlantRunning or not isScriptRunning then break end
@@ -823,7 +825,7 @@ local function cleanDirtStep(target)
     -- Mode Jarak Jauh: Teleport ke dekat kotoran
     if CleanState.USE_TELEPORT then
         safeTeleport(target.Position)
-        task.wait(0.02)
+        task.wait((AntiDetect and AntiDetect.cfg.Enabled) and AntiDetect.jitterDelay(0.02) or 0.02)
     end
 
     fireCleanSignal(CleanState.CurrentKosanID)
@@ -1230,6 +1232,62 @@ local function stopAntiAfk()
         antiAfkThread = nil
     end
 end
+
+-- ========================================================
+-- ANTI-DETECT MODULE
+-- ========================================================
+local AntiDetect = (function()
+    local cfg = {
+        Enabled         = true,
+        TpJitter        = true,
+        JitterRange     = 0.6,
+        JitterY         = 0.0,
+        DelayJitter     = true,
+        DelayJitterMin  = 0.02,
+        DelayJitterMax  = 0.08,
+        RateLimit       = true,
+        MinRateInterval = 0.08,
+    }
+    local state = { LastInvoke = 0, BlockCount = 0, JitterCount = 0 }
+
+    local function jitterPos(pos)
+        if not cfg.Enabled or not cfg.TpJitter then return pos end
+        local rx = (math.random() * 2 - 1) * cfg.JitterRange
+        local rz = (math.random() * 2 - 1) * cfg.JitterRange
+        local ry = (math.random() * 2 - 1) * cfg.JitterY
+        state.JitterCount += 1
+        return Vector3.new(pos.X + rx, pos.Y + ry, pos.Z + rz)
+    end
+
+    local function jitterDelay(base)
+        if not cfg.Enabled or not cfg.DelayJitter then return base end
+        local noise = cfg.DelayJitterMin + math.random() * (cfg.DelayJitterMax - cfg.DelayJitterMin)
+        return base + noise
+    end
+
+    local function checkRate()
+        if not cfg.Enabled or not cfg.RateLimit then return end
+        local now = os.clock()
+        local gap = now - state.LastInvoke
+        if gap < cfg.MinRateInterval then
+            state.BlockCount += 1
+            task.wait(cfg.MinRateInterval - gap + 0.005)
+        end
+        state.LastInvoke = os.clock()
+    end
+
+    local function safeInvoke(rf, ...)
+        checkRate()
+        return pcall(function(...) return rf:InvokeServer(...) end, ...)
+    end
+
+    local function safeFire(re, ...)
+        checkRate()
+        pcall(function(...) re:FireServer(...) end, ...)
+    end
+
+    return { cfg = cfg, state = state, jitterPos = jitterPos, jitterDelay = jitterDelay, checkRate = checkRate, safeInvoke = safeInvoke, safeFire = safeFire }
+end)()
 
 -- Semua logika ternak/traktor/kotoran/rute dibungkus satu fungsi agar tidak
 -- melebihi batas 200 variabel local di tingkat atas. Antarmuka lewat tabel TernakHub.
@@ -3345,7 +3403,7 @@ TabListLayout.Padding = UDim.new(0, 6)
 
 local function createTabPill(title)
     local btn = Instance.new("TextButton")
-    btn.Size = UDim2.new(1 / 6, -6, 1, -6)
+    btn.Size = UDim2.new(1 / 7, -5, 1, -6)
     btn.BackgroundColor3 = Color3.fromRGB(12, 5, 18)
     btn.BorderSizePixel = 0
     btn.Font = Enum.Font.GothamBold
@@ -4958,6 +5016,179 @@ local BlindboxPage = (function()
 end)()
 
 -- ========================================================
+-- TAB: ANTI-DETECT PAGE
+-- ========================================================
+local DetectPage = (function()
+    local page = Instance.new("Frame")
+    page.Name = "DetectPage"
+    page.Size = UDim2.new(1, 0, 1, 0)
+    page.BackgroundTransparency = 1
+    page.Visible = false
+    page.Parent = ContentFrame
+
+    local statusCard = createModernCard(page, 48, 0)
+    local ico = Instance.new("TextLabel")
+    ico.Size = UDim2.new(0, 24, 0, 24)
+    ico.Position = UDim2.new(0, 12, 0.5, -12)
+    ico.BackgroundTransparency = 1
+    ico.Font = Enum.Font.GothamBold
+    ico.Text = "🛡️"
+    ico.TextSize = 16
+    ico.Parent = statusCard
+
+    local title = Instance.new("TextLabel")
+    title.Size = UDim2.new(1, -120, 0, 16)
+    title.Position = UDim2.new(0, 42, 0, 8)
+    title.BackgroundTransparency = 1
+    title.Font = Enum.Font.GothamBold
+    title.Text = "Anti-Detect System"
+    title.TextColor3 = Color3.fromRGB(240, 240, 250)
+    title.TextSize = 11
+    title.TextXAlignment = Enum.TextXAlignment.Left
+    title.Parent = statusCard
+
+    local sub = Instance.new("TextLabel")
+    sub.Size = UDim2.new(1, -120, 0, 14)
+    sub.Position = UDim2.new(0, 42, 0, 25)
+    sub.BackgroundTransparency = 1
+    sub.Font = Enum.Font.Gotham
+    sub.Text = "Jitter: 0 | Rate-Limited: 0"
+    sub.TextColor3 = Color3.fromRGB(140, 145, 165)
+    sub.TextSize = 10
+    sub.TextXAlignment = Enum.TextXAlignment.Left
+    sub.Parent = statusCard
+
+    local badge = Instance.new("Frame")
+    badge.Size = UDim2.new(0, 68, 0, 22)
+    badge.Position = UDim2.new(1, -78, 0.5, -11)
+    badge.BackgroundColor3 = Color3.fromRGB(20, 45, 35)
+    badge.BorderSizePixel = 0
+    badge.Parent = statusCard
+    Instance.new("UICorner", badge).CornerRadius = UDim.new(0, 6)
+
+    local badgeText = Instance.new("TextLabel")
+    badgeText.Size = UDim2.new(1, 0, 1, 0)
+    badgeText.BackgroundTransparency = 1
+    badgeText.Font = Enum.Font.GothamBold
+    badgeText.Text = "● ACTIVE"
+    badgeText.TextColor3 = Color3.fromRGB(52, 211, 153)
+    badgeText.TextSize = 9
+    badgeText.Parent = badge
+
+    local function makeToggleCard(posY, labelTxt, defaultVal, onToggle)
+        local card = createModernCard(page, 40, posY)
+        local lbl = Instance.new("TextLabel")
+        lbl.Size = UDim2.new(1, -90, 1, 0)
+        lbl.Position = UDim2.new(0, 12, 0, 0)
+        lbl.BackgroundTransparency = 1
+        lbl.Font = Enum.Font.GothamBold
+        lbl.Text = labelTxt
+        lbl.TextColor3 = Color3.fromRGB(230, 230, 245)
+        lbl.TextSize = 10
+        lbl.TextXAlignment = Enum.TextXAlignment.Left
+        lbl.Parent = card
+
+        local btn = Instance.new("TextButton")
+        btn.Size = UDim2.new(0, 60, 0, 24)
+        btn.Position = UDim2.new(1, -72, 0.5, -12)
+        btn.BackgroundColor3 = defaultVal and Color3.fromRGB(16, 185, 129) or Color3.fromRGB(45, 48, 65)
+        btn.BorderSizePixel = 0
+        btn.Font = Enum.Font.GothamBold
+        btn.Text = defaultVal and "ON" or "OFF"
+        btn.TextColor3 = Color3.fromRGB(255, 255, 255)
+        btn.TextSize = 10
+        btn.AutoButtonColor = false
+        btn.Parent = card
+        Instance.new("UICorner", btn).CornerRadius = UDim.new(0, 6)
+
+        table.insert(Connections, btn.Activated:Connect(function()
+            local newVal = onToggle()
+            btn.Text = newVal and "ON" or "OFF"
+            btn.BackgroundColor3 = newVal and Color3.fromRGB(16, 185, 129) or Color3.fromRGB(45, 48, 65)
+        end))
+        return card, btn
+    end
+
+    makeToggleCard(54, "🎲 Jitter Posisi Teleport (±0.6s)", AntiDetect.cfg.TpJitter, function()
+        AntiDetect.cfg.TpJitter = not AntiDetect.cfg.TpJitter
+        return AntiDetect.cfg.TpJitter
+    end)
+
+    makeToggleCard(100, "⏱️ Randomisasi Delay (20-80ms)", AntiDetect.cfg.DelayJitter, function()
+        AntiDetect.cfg.DelayJitter = not AntiDetect.cfg.DelayJitter
+        return AntiDetect.cfg.DelayJitter
+    end)
+
+    makeToggleCard(146, "🔁 Rate Limit Request Server (80ms)", AntiDetect.cfg.RateLimit, function()
+        AntiDetect.cfg.RateLimit = not AntiDetect.cfg.RateLimit
+        return AntiDetect.cfg.RateLimit
+    end)
+
+    local infoCard = createModernCard(page, 58, 192)
+    local infoTitle = Instance.new("TextLabel")
+    infoTitle.Size = UDim2.new(1, -24, 0, 14)
+    infoTitle.Position = UDim2.new(0, 12, 0, 6)
+    infoTitle.BackgroundTransparency = 1
+    infoTitle.Font = Enum.Font.GothamBold
+    infoTitle.Text = "STATUS KEAMANAN"
+    infoTitle.TextColor3 = Color3.fromRGB(99, 102, 241)
+    infoTitle.TextSize = 9
+    infoTitle.TextXAlignment = Enum.TextXAlignment.Left
+    infoTitle.Parent = infoCard
+
+    local infoDesc = Instance.new("TextLabel")
+    infoDesc.Size = UDim2.new(1, -24, 0, 32)
+    infoDesc.Position = UDim2.new(0, 12, 0, 22)
+    infoDesc.BackgroundTransparency = 1
+    infoDesc.Font = Enum.Font.Gotham
+    infoDesc.Text = "Anti-Detect aktif melindungi bot dari deteksi server: TP Jitter mengacak koordinat, delay diacak, dan spam request dibatasi."
+    infoDesc.TextColor3 = Color3.fromRGB(160, 165, 185)
+    infoDesc.TextSize = 8.5
+    infoDesc.TextWrapped = true
+    infoDesc.TextXAlignment = Enum.TextXAlignment.Left
+    infoDesc.Parent = infoCard
+
+    local toggleBtn, toggleGrad = createHeroToggle(page, "ToggleDetectBtn", "■  ANTI-DETECT (AKTIF)", -44)
+    toggleGrad.Color = ColorSequence.new({
+        ColorSequenceKeypoint.new(0, Color3.fromRGB(52, 211, 153)),
+        ColorSequenceKeypoint.new(1, Color3.fromRGB(16, 185, 129))
+    })
+
+    table.insert(Connections, toggleBtn.Activated:Connect(function()
+        AntiDetect.cfg.Enabled = not AntiDetect.cfg.Enabled
+        local ok = AntiDetect.cfg.Enabled
+        if ok then
+            toggleGrad.Color = ColorSequence.new({
+                ColorSequenceKeypoint.new(0, Color3.fromRGB(52, 211, 153)),
+                ColorSequenceKeypoint.new(1, Color3.fromRGB(16, 185, 129))
+            })
+            toggleBtn.Text = "■  ANTI-DETECT (AKTIF)"
+            badgeText.Text = "● ACTIVE"
+            badgeText.TextColor3 = Color3.fromRGB(52, 211, 153)
+            badge.BackgroundColor3 = Color3.fromRGB(20, 45, 35)
+        else
+            toggleGrad.Color = ColorSequence.new({
+                ColorSequenceKeypoint.new(0, Color3.fromRGB(244, 63, 94)),
+                ColorSequenceKeypoint.new(1, Color3.fromRGB(225, 29, 72))
+            })
+            toggleBtn.Text = "▶  START ANTI-DETECT"
+            badgeText.Text = "● OFF"
+            badgeText.TextColor3 = Color3.fromRGB(160, 165, 185)
+            badge.BackgroundColor3 = Color3.fromRGB(30, 33, 46)
+        end
+    end))
+
+    task.spawn(function()
+        while isScriptRunning do
+            sub.Text = string.format("Jitter: %d | Rate-Limited: %d", AntiDetect.state.JitterCount, AntiDetect.state.BlockCount)
+            task.wait(2)
+        end
+    end)
+
+    return page
+end)()
+
+-- ========================================================
 -- FOOTER BAR [JJK THEME]
 -- ========================================================
 local Footer = Instance.new("Frame")
@@ -4996,6 +5227,7 @@ local TAB_MAP = {
     Afk   = { page = AfkPage,   btn = TabAfkBtn },
     Ternak = { page = TernakPage, btn = TabTernakBtn },
     Blindbox = { page = BlindboxPage, btn = createTabPill("🎁 BLINDBOX") },
+    Detect = { page = DetectPage, btn = createTabPill("🛡️ DETECT") },
 }
 
 local function switchTab(tab)
@@ -5018,6 +5250,7 @@ table.insert(Connections, TabTenantBtn.Activated:Connect(function() switchTab("T
 table.insert(Connections, TabAfkBtn.Activated:Connect(function() switchTab("Afk") end))
 table.insert(Connections, TabTernakBtn.Activated:Connect(function() switchTab("Ternak") end))
 table.insert(Connections, TAB_MAP.Blindbox.btn.Activated:Connect(function() switchTab("Blindbox") end))
+table.insert(Connections, TAB_MAP.Detect.btn.Activated:Connect(function() switchTab("Detect") end))
 
 -- ========================================================
 -- LOGIC HANDLERS & ANIMATIONS
