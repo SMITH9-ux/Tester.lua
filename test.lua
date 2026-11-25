@@ -1,3 +1,5 @@
+
+
 -- SERVICES
 local Players = game:GetService("Players")
 local Workspace = game:GetService("Workspace")
@@ -3109,12 +3111,477 @@ local BlindboxHub = (function()
 end)()
 
 -- ========================================================
+-- AUTO TEMBAK JAM AJAIB (KOSAN LEVEL 10 & LEVEL 9)
+-- Knit Remote: JamAjaibService.RF.Tembak
+-- ========================================================
+local JamAjaibHub = (function()
+    local Config = {
+        TargetLv10      = true,   -- deteksi & tembak kosan level 10
+        TargetLv9       = true,   -- deteksi & tembak kosan level 9
+        OwnKosanOnly    = true,   -- deteksi hanya ke kost milik kita sendiri
+        AutoTP          = true,   -- otomatis teleport ke depan kosan sebelum tembak
+        AutoEquip       = true,   -- otomatis equip tool Jam Ajaib dari Backpack
+        WaitTenant      = true,   -- deteksi jika tidak ada penyewa dan tunggu sampai ada penyewa
+        Interval        = 1.0,    -- detik jeda antar siklus pengecekan
+        ShootDelay      = 0.35,   -- detik jeda antar tembakan ke kosan berbeda
+        TpSettleDelay   = 0.15,   -- detik jeda setelah teleport sebelum tembak
+        CooldownPerRoom = 5.0,    -- detik jeda sebelum kosan yang sama ditembak lagi
+    }
+
+    local State = {
+        Running       = false,
+        ShotCount     = 0,
+        SuccessCount  = 0,
+        DetectedLv10  = 0,
+        DetectedLv9   = 0,
+        WaitingTenant = false,
+        LastTarget    = "-",
+        LastResult    = "Idle",
+        RecentShots   = {},      -- [kosanId / model] = os.clock()
+    }
+
+    local cb = { update = function() end }
+    local jamRF = nil
+    local workerThread = nil
+
+    local function getJamRemote()
+        if jamRF and jamRF.Parent then return jamRF end
+        pcall(function()
+            jamRF = ReplicatedStorage
+                :WaitForChild("NKSystem", 5)
+                :WaitForChild("Packages", 5)
+                :WaitForChild("Knit", 5)
+                :WaitForChild("Services", 5)
+                :WaitForChild("JamAjaibService", 5)
+                :WaitForChild("RF", 5)
+                :WaitForChild("Tembak", 5)
+        end)
+        return jamRF
+    end
+
+    -- Auto equip tool Jam Ajaib dari Backpack jika ada
+    local function equipJamAjaib()
+        if not Config.AutoEquip then return end
+        local char = LocalPlayer.Character
+        if not char then return end
+
+        for _, item in ipairs(char:GetChildren()) do
+            if item:IsA("Tool") and string.find(string.lower(item.Name), "jam", 1, true) then
+                return item
+            end
+        end
+
+        local bp = LocalPlayer:FindFirstChildOfClass("Backpack")
+        if bp then
+            for _, item in ipairs(bp:GetChildren()) do
+                if item:IsA("Tool") and string.find(string.lower(item.Name), "jam", 1, true) then
+                    local hum = char:FindFirstChildOfClass("Humanoid")
+                    if hum then
+                        pcall(function() hum:EquipTool(item) end)
+                        task.wait(0.1)
+                    end
+                    return item
+                end
+            end
+        end
+        return nil
+    end
+
+    -- Deteksi apakah kosan memiliki penyewa (kamar terisi vs kosong)
+    local function hasTenant(obj)
+        if not obj then return false end
+
+        -- 1. Cek Attributes pada model kosan
+        local okAttr, attrs = pcall(function() return obj:GetAttributes() end)
+        if okAttr and attrs then
+            for k, v in pairs(attrs) do
+                local lk = string.lower(tostring(k))
+                if string.find(lk, "penyewa", 1, true) or string.find(lk, "tenant", 1, true) or string.find(lk, "occup", 1, true) or string.find(lk, "terisi", 1, true) then
+                    if type(v) == "boolean" then
+                        return v
+                    elseif type(v) == "number" then
+                        return v > 0
+                    elseif type(v) == "string" then
+                        local lv = string.lower(v)
+                        if lv == "kosong" or lv == "empty" or lv == "" or lv == "none" or lv == "false" or lv == "0" then
+                            return false
+                        else
+                            return true
+                        end
+                    end
+                end
+            end
+        end
+
+        -- 2. Cek ValueBase di dalam model kosan
+        for _, child in ipairs(obj:GetChildren()) do
+            if child:IsA("ValueBase") then
+                local lc = string.lower(child.Name)
+                if string.find(lc, "penyewa", 1, true) or string.find(lc, "tenant", 1, true) or string.find(lc, "terisi", 1, true) then
+                    local val = child.Value
+                    if type(val) == "boolean" then return val end
+                    if type(val) == "number" then return val > 0 end
+                    if type(val) == "string" then
+                        local lv = string.lower(val)
+                        if lv == "kosong" or lv == "empty" or lv == "" or lv == "none" then return false end
+                        return true
+                    end
+                end
+            end
+        end
+
+        -- 3. Cek TextLabel di dalam model kosan (pintu / papan kamar)
+        local sawEmpty = false
+        local sawOccupied = false
+        for _, desc in ipairs(obj:GetDescendants()) do
+            if desc:IsA("TextLabel") or desc:IsA("TextButton") then
+                local txt = string.lower(desc.Text or "")
+                if txt ~= "" then
+                    if string.find(txt, "kosong", 1, true) or string.find(txt, "belum ada penyewa", 1, true) or string.find(txt, "tidak ada penyewa", 1, true) or string.find(txt, "vacant", 1, true) then
+                        sawEmpty = true
+                    end
+                    if string.find(txt, "terisi", 1, true) or string.find(txt, "occupied", 1, true) or string.match(txt, "%d+:%d+") or string.find(txt, "sewa", 1, true) then
+                        sawOccupied = true
+                    end
+                end
+            end
+        end
+
+        if sawEmpty and not sawOccupied then
+            return false
+        end
+        if sawOccupied then
+            return true
+        end
+
+        -- 4. Pengecekan jumlah penyewa global pemain via readTenantCount()
+        if typeof(readTenantCount) == "function" then
+            local gCount = readTenantCount()
+            if gCount ~= nil then
+                return gCount > 0
+            end
+        end
+
+        return true
+    end
+
+    -- Deteksi level kosan dari Attributes, Children Values, TextLabels, atau Nama
+    local function detectLevel(obj)
+        if not obj then return nil end
+
+        -- 1. Cek Attributes
+        local okAttr, attrs = pcall(function() return obj:GetAttributes() end)
+        if okAttr and attrs then
+            for k, v in pairs(attrs) do
+                local lk = string.lower(tostring(k))
+                if string.find(lk, "level", 1, true) or lk == "lv" or lk == "lvl" or string.find(lk, "tingkat", 1, true) then
+                    local num = tonumber(v) or tonumber(string.match(tostring(v), "%d+"))
+                    if num then return num end
+                end
+            end
+        end
+
+        -- 2. Cek ValueBase
+        for _, child in ipairs(obj:GetChildren()) do
+            if child:IsA("ValueBase") then
+                local lc = string.lower(child.Name)
+                if string.find(lc, "level", 1, true) or lc == "lv" or lc == "lvl" then
+                    local num = tonumber(child.Value) or tonumber(string.match(tostring(child.Value), "%d+"))
+                    if num then return num end
+                end
+            end
+        end
+
+        -- 3. Cek TextLabel di BillboardGui / SurfaceGui
+        for _, desc in ipairs(obj:GetDescendants()) do
+            if desc:IsA("TextLabel") or desc:IsA("TextButton") then
+                local txt = string.lower(desc.Text or "")
+                if string.find(txt, "level", 1, true) or string.find(txt, "lv", 1, true) then
+                    local num = string.match(txt, "level%s*(%d+)")
+                        or string.match(txt, "lv%s*%.?%s*(%d+)")
+                        or string.match(txt, "lvl%s*(%d+)")
+                    if num then return tonumber(num) end
+                end
+            end
+        end
+
+        -- 4. Cek Nama Model
+        local lname = string.lower(obj.Name)
+        local num = string.match(lname, "level%s*(_?%d+)") or string.match(lname, "lv%s*(_?%d+)")
+        if num then
+            num = string.gsub(num, "_", "")
+            return tonumber(num)
+        end
+
+        return nil
+    end
+
+    -- Ekstraksi KosanID (mis. "8833771934_19" atau ID numerik)
+    local function extractKosanId(obj)
+        if not obj then return "Unknown" end
+        local okAttr, attrs = pcall(function() return obj:GetAttributes() end)
+        if okAttr and attrs then
+            local id = attrs.KosanID or attrs.kosanId or attrs.Id or attrs.ID or attrs.RoomId or attrs.RoomNumber
+            if id then return tostring(id) end
+        end
+
+        if string.find(obj.Name, "^%d+_%d+$") then
+            return obj.Name
+        end
+
+        return obj.Name
+    end
+
+    -- Dapatkan posisi Vector3 dari kosan
+    local function getKosanPos(obj)
+        if obj:IsA("Model") then
+            local ok, cf = pcall(function() return obj:GetPivot() end)
+            if ok and cf then return cf.Position end
+        elseif obj:IsA("BasePart") then
+            return obj.Position
+        end
+        return nil
+    end
+
+    -- Pindai kosan target (Level 10 dan Level 9), dengan filter kepemilikan sendiri
+    local function scanKosan()
+        local targets = {}
+        local seen = {}
+        local count10, count9 = 0, 0
+        local tokens = (typeof(ownerTokens) == "function") and ownerTokens() or nil
+
+        local function evaluate(obj)
+            if not obj or seen[obj] then return end
+            if not (obj:IsA("Model") or obj:IsA("Folder") or obj:IsA("BasePart")) then return end
+
+            -- Filter: Hanya kosan milik kita sendiri bila OwnKosanOnly aktif
+            if Config.OwnKosanOnly and tokens and typeof(isOwnedByMe) == "function" then
+                if not isOwnedByMe(obj, tokens) then
+                    return
+                end
+            end
+
+            local lvl = detectLevel(obj)
+            if lvl then
+                local want = false
+                if lvl == 10 and Config.TargetLv10 then want = true count10 += 1 end
+                if lvl == 9 and Config.TargetLv9 then want = true count9 += 1 end
+
+                if want then
+                    seen[obj] = true
+                    local id = extractKosanId(obj)
+                    local pos = getKosanPos(obj)
+                    table.insert(targets, {
+                        Model = obj,
+                        Level = lvl,
+                        Id = id,
+                        Position = pos,
+                    })
+                end
+            end
+        end
+
+        -- 1. Cari di direct children / named folders
+        for _, child in ipairs(Workspace:GetChildren()) do
+            local lname = string.lower(child.Name)
+            if string.find(lname, "kosan", 1, true) or string.find(lname, "kamar", 1, true) or string.find(lname, "room", 1, true) or string.find(lname, "plot", 1, true) then
+                for _, sub in ipairs(child:GetChildren()) do
+                    evaluate(sub)
+                end
+                evaluate(child)
+            else
+                evaluate(child)
+            end
+        end
+
+        -- 2. Fallback scan Model di Workspace
+        if #targets == 0 then
+            for _, obj in ipairs(Workspace:GetDescendants()) do
+                if obj:IsA("Model") then
+                    local lname = string.lower(obj.Name)
+                    if string.find(lname, "kosan", 1, true) or string.find(lname, "kamar", 1, true) or string.find(lname, "room", 1, true) then
+                        evaluate(obj)
+                    end
+                end
+            end
+        end
+
+        State.DetectedLv10 = count10
+        State.DetectedLv9 = count9
+        return targets
+    end
+
+    -- Eksekusi tembak ke 1 kosan target
+    local function shootTarget(target)
+        local rf = getJamRemote()
+        if not rf then
+            warn("[Jam Ajaib] Remote JamAjaibService.RF.Tembak tidak ditemukan!")
+            State.LastResult = "Remote tidak ditemukan"
+            cb.update()
+            return false
+        end
+
+        -- Auto Equip tool
+        equipJamAjaib()
+
+        -- Auto Teleport jika diaktifkan
+        if Config.AutoTP and target.Position then
+            safeTeleport(target.Position)
+            local tpDelay = (typeof(AntiDetect) ~= "nil" and AntiDetect.cfg.Enabled)
+                and AntiDetect.jitterDelay(Config.TpSettleDelay)
+                or Config.TpSettleDelay
+            task.wait(tpDelay)
+        end
+
+        -- Menyiapkan payload multi-format
+        local payloadTable = {
+            KosanID = target.Id,
+            Target = target.Model,
+            Model = target.Model,
+            Id = target.Id,
+            Level = target.Level,
+        }
+        payloadTable[1] = target.Id
+        payloadTable[2] = target.Model
+
+        local ok, result = false, nil
+
+        if typeof(AntiDetect) ~= "nil" and AntiDetect.cfg.Enabled then
+            ok, result = AntiDetect.safeInvoke(rf, target.Id or target.Model)
+            if not ok or (type(result) == "table" and result.ok == false) then
+                ok, result = AntiDetect.safeInvoke(rf, payloadTable)
+            end
+            if not ok or (type(result) == "table" and result.ok == false) then
+                ok, result = AntiDetect.safeInvoke(rf, { target.Id })
+            end
+            if not ok or (type(result) == "table" and result.ok == false) then
+                ok, result = AntiDetect.safeInvoke(rf, target.Model)
+            end
+        else
+            ok, result = pcall(function() return rf:InvokeServer(target.Id or target.Model) end)
+            if not ok or (type(result) == "table" and result.ok == false) then
+                ok, result = pcall(function() return rf:InvokeServer(payloadTable) end)
+            end
+            if not ok or (type(result) == "table" and result.ok == false) then
+                ok, result = pcall(function() return rf:InvokeServer({ target.Id }) end)
+            end
+            if not ok or (type(result) == "table" and result.ok == false) then
+                ok, result = pcall(function() return rf:InvokeServer(target.Model) end)
+            end
+        end
+
+        State.ShotCount += 1
+        State.LastTarget = string.format("%s (Lv %d)", tostring(target.Id), target.Level)
+        State.RecentShots[target.Id or target.Model] = os.clock()
+
+        local isSuccess = ok and (result == true or (type(result) == "table" and result.ok ~= false) or result ~= false)
+        if isSuccess then
+            State.SuccessCount += 1
+            State.LastResult = "OK - Berhasil tembak!"
+            print(string.format("[Jam Ajaib] SUKSES Tembak Kosan: %s (Lv %d)", tostring(target.Id), target.Level))
+        else
+            State.LastResult = "Ditolak / Gagal: " .. tostring(result)
+            warn(string.format("[Jam Ajaib] Gagal tembak kosan %s: %s", tostring(target.Id), tostring(result)))
+        end
+
+        cb.update()
+        return isSuccess
+    end
+
+    local function startWorker()
+        if workerThread then return end
+        workerThread = task.spawn(function()
+            while State.Running and isScriptRunning do
+                local targets = scanKosan()
+                cb.update()
+
+                -- Cek jumlah penyewa global jika fitur WaitTenant aktif
+                if Config.WaitTenant and typeof(readTenantCount) == "function" then
+                    local gCount = readTenantCount()
+                    if gCount ~= nil and gCount <= 0 then
+                        State.WaitingTenant = true
+                        State.LastResult = "Menunggu penyewa... (0 Penyewa)"
+                        cb.update()
+                        local waitTime = (typeof(AntiDetect) ~= "nil" and AntiDetect.cfg.Enabled)
+                            and AntiDetect.jitterDelay(Config.Interval or 1.5)
+                            or (Config.Interval or 1.5)
+                        task.wait(waitTime)
+                    end
+                end
+
+                local now = os.clock()
+                local activeTargetCount = 0
+
+                for _, t in ipairs(targets) do
+                    if not State.Running or not isScriptRunning then break end
+
+                    -- Cek apakah kosan memiliki penyewa jika WaitTenant aktif
+                    local allowShoot = true
+                    if Config.WaitTenant then
+                        allowShoot = hasTenant(t.Model)
+                    end
+
+                    if allowShoot then
+                        activeTargetCount += 1
+                        State.WaitingTenant = false
+                        local key = t.Id or t.Model
+                        local lastShot = State.RecentShots[key]
+                        if not lastShot or (now - lastShot >= Config.CooldownPerRoom) then
+                            shootTarget(t)
+                            local delayTime = (typeof(AntiDetect) ~= "nil" and AntiDetect.cfg.Enabled)
+                                and AntiDetect.jitterDelay(Config.ShootDelay)
+                                or Config.ShootDelay
+                            task.wait(delayTime)
+                        end
+                    end
+                end
+
+                if Config.WaitTenant and activeTargetCount == 0 and #targets > 0 then
+                    State.WaitingTenant = true
+                    State.LastResult = "Semua kamar kosong. Menunggu penyewa..."
+                    cb.update()
+                end
+
+                local waitTime = (typeof(AntiDetect) ~= "nil" and AntiDetect.cfg.Enabled)
+                    and AntiDetect.jitterDelay(Config.Interval)
+                    or Config.Interval
+                task.wait(waitTime)
+            end
+            workerThread = nil
+        end)
+    end
+
+    local function stopWorker()
+        State.Running = false
+        State.WaitingTenant = false
+        if workerThread then
+            task.cancel(workerThread)
+            workerThread = nil
+        end
+        State.LastResult = "Stopped"
+        cb.update()
+    end
+
+    return {
+        Config = Config,
+        State = State,
+        cb = cb,
+        hasTenant = hasTenant,
+        scanKosan = scanKosan,
+        shootTarget = shootTarget,
+        startWorker = startWorker,
+        stopWorker = stopWorker,
+        stopAll = stopWorker,
+    }
+end)()
+
+-- ========================================================
 -- HIGH-END CYBER GUI DESIGN (SMITH GANTENG)
 -- ========================================================
 -- Ukuran GUI sedang (menyesuaikan layar, tidak lebih kecil dari 340x445)
 local viewport = (Workspace.CurrentCamera and Workspace.CurrentCamera.ViewportSize) or Vector2.new(1280, 720)
-local WIN_WIDTH = math.clamp(400 + 92, 340, math.max(340, viewport.X - 20)) -- 92 = lebar sidebar tab kiri
-local WIN_HEIGHT = math.clamp(500, 445, math.max(445, viewport.Y - 40))
+local WIN_WIDTH = math.clamp(530, 440, math.max(440, viewport.X - 20))
+local WIN_HEIGHT = math.clamp(470, 410, math.max(410, viewport.Y - 40))
 local MINI_HEIGHT = 46
 
 local TWEEN_SMOOTH = TweenInfo.new(0.25, Enum.EasingStyle.Quart, Enum.EasingDirection.Out)
@@ -3367,58 +3834,96 @@ JJKBannerGrad.Color = ColorSequence.new({
 -- Bagian UI di bawah dibungkus satu fungsi agar variabelnya tidak menumpuk di fungsi utama
 -- (batas Lua/Luau: 200 variabel local per fungsi, dan sebagian executor menambah local sendiri).
 local _ = (function()
-local TabBar = Instance.new("Frame")
+local SIDEBAR_WIDTH = 114
+local TAB_ACTIVE_BG   = Color3.fromRGB(160, 18, 38)
+local TAB_INACTIVE_BG = Color3.fromRGB(15, 6, 22)
+local TAB_ACTIVE_TXT  = Color3.fromRGB(255, 245, 245)
+local TAB_INACTIVE_TXT = Color3.fromRGB(170, 125, 140)
+
+-- Left Vertical Sidebar Navigation
+local TabBar = Instance.new("ScrollingFrame")
 TabBar.Name = "TabBar"
-TabBar.Size = UDim2.new(0, 86, 1, -(MINI_HEIGHT + 10 + 30))
-TabBar.Position = UDim2.new(0, 8, 0, MINI_HEIGHT + 10)
-TabBar.BackgroundColor3 = Color3.fromRGB(12, 5, 18)
+TabBar.Size = UDim2.new(0, SIDEBAR_WIDTH, 1, -(MINI_HEIGHT + 34))
+TabBar.Position = UDim2.new(0, 8, 0, MINI_HEIGHT + 8)
+TabBar.BackgroundColor3 = Color3.fromRGB(10, 4, 15)
 TabBar.BorderSizePixel = 0
+TabBar.ScrollBarThickness = 2
+TabBar.ScrollBarImageColor3 = Color3.fromRGB(90, 15, 28)
+TabBar.CanvasSize = UDim2.new(0, 0, 0, 8 * 36 + 10)
 TabBar.Parent = MainFrame
 Instance.new("UICorner", TabBar).CornerRadius = UDim.new(0, 10)
+
 local tabStroke = Instance.new("UIStroke", TabBar)
 tabStroke.Color = Color3.fromRGB(120, 15, 30)
-tabStroke.Thickness = 1
+tabStroke.Thickness = 1.2
+
+local TabPad = Instance.new("UIPadding", TabBar)
+TabPad.PaddingTop = UDim.new(0, 6)
+TabPad.PaddingBottom = UDim.new(0, 6)
+TabPad.PaddingLeft = UDim.new(0, 5)
+TabPad.PaddingRight = UDim.new(0, 5)
 
 local TabListLayout = Instance.new("UIListLayout", TabBar)
 TabListLayout.FillDirection = Enum.FillDirection.Vertical
 TabListLayout.HorizontalAlignment = Enum.HorizontalAlignment.Center
 TabListLayout.VerticalAlignment = Enum.VerticalAlignment.Top
-TabListLayout.SortOrder = Enum.SortOrder.LayoutOrder
-TabListLayout.Padding = UDim.new(0, 6)
-Instance.new("UIPadding", TabBar).PaddingTop = UDim.new(0, 6)
+TabListLayout.Padding = UDim.new(0, 4)
 
 local function createTabPill(title)
     local btn = Instance.new("TextButton")
-    btn.Size = UDim2.new(1, -10, 0, 36)
-    btn.BackgroundColor3 = Color3.fromRGB(12, 5, 18)
+    btn.Size = UDim2.new(1, 0, 0, 32)
+    btn.BackgroundColor3 = TAB_INACTIVE_BG
     btn.BorderSizePixel = 0
     btn.Font = Enum.Font.GothamBold
     btn.Text = title
-    btn.TextColor3 = Color3.fromRGB(120, 80, 90)
+    btn.TextColor3 = TAB_INACTIVE_TXT
     btn.TextSize = 10
-    btn.TextScaled = true
+    btn.TextXAlignment = Enum.TextXAlignment.Left
     btn.AutoButtonColor = false
     btn.Parent = TabBar
-    local sizeLimit = Instance.new("UITextSizeConstraint", btn)
-    sizeLimit.MaxTextSize = 10
-    sizeLimit.MinTextSize = 6
+
+    local pad = Instance.new("UIPadding", btn)
+    pad.PaddingLeft = UDim.new(0, 8)
+
     Instance.new("UICorner", btn).CornerRadius = UDim.new(0, 6)
+
+    local st = Instance.new("UIStroke", btn)
+    st.Color = Color3.fromRGB(55, 12, 24)
+    st.Thickness = 1
+
+    btn.MouseEnter:Connect(function()
+        if btn.BackgroundColor3 ~= TAB_ACTIVE_BG then
+            TweenService:Create(btn, TWEEN_FAST, {
+                BackgroundColor3 = Color3.fromRGB(28, 10, 30),
+                TextColor3 = Color3.fromRGB(230, 180, 200)
+            }):Play()
+        end
+    end)
+    btn.MouseLeave:Connect(function()
+        if btn.BackgroundColor3 ~= TAB_ACTIVE_BG then
+            TweenService:Create(btn, TWEEN_FAST, {
+                BackgroundColor3 = TAB_INACTIVE_BG,
+                TextColor3 = TAB_INACTIVE_TXT
+            }):Play()
+        end
+    end)
+
     return btn
 end
 
-local TabPlantBtn = createTabPill("🌱 PLANT")
-local TabCleanBtn = createTabPill("🧹 CLEAN")
-local TabTenantBtn = createTabPill("🏠 SEWA")
-local TabAfkBtn   = createTabPill("🛡️ AFK")
-local TabTernakBtn = createTabPill("🐑 TERNAK")
+local TabPlantBtn = createTabPill("🌱  PLANT")
+local TabCleanBtn = createTabPill("🧹  CLEAN")
+local TabTenantBtn = createTabPill("🏠  SEWA")
+local TabAfkBtn   = createTabPill("🛡️  AFK")
+local TabTernakBtn = createTabPill("🐑  TERNAK")
 
 -- ========================================================
--- CONTENT CONTAINER
+-- CONTENT CONTAINER (RIGHT SIDE)
 -- ========================================================
 local ContentFrame = Instance.new("Frame")
 ContentFrame.Name = "ContentFrame"
-ContentFrame.Size = UDim2.new(1, -112, 1, -(MINI_HEIGHT + 44))
-ContentFrame.Position = UDim2.new(0, 100, 0, MINI_HEIGHT + 14)
+ContentFrame.Size = UDim2.new(1, -(SIDEBAR_WIDTH + 20), 1, -(MINI_HEIGHT + 34))
+ContentFrame.Position = UDim2.new(0, SIDEBAR_WIDTH + 14, 0, MINI_HEIGHT + 8)
 ContentFrame.BackgroundTransparency = 1
 ContentFrame.Parent = MainFrame
 
@@ -5175,6 +5680,361 @@ local DetectPage = (function()
 end)()
 
 -- ========================================================
+-- TAB: AUTO TEMBAK JAM AJAIB PAGE
+-- ========================================================
+local JamAjaibPage = (function()
+    local J = JamAjaibHub
+    local Config, State = J.Config, J.State
+
+    local page = Instance.new("Frame")
+    page.Name = "JamAjaibPage"
+    page.Size = UDim2.new(1, 0, 1, 0)
+    page.BackgroundTransparency = 1
+    page.Visible = false
+    page.Parent = ContentFrame
+
+    -- Card 1: Status & Info
+    local statusCard = createModernCard(page, 46, 0)
+    local ico = Instance.new("TextLabel")
+    ico.Size = UDim2.new(0, 24, 0, 24)
+    ico.Position = UDim2.new(0, 12, 0.5, -12)
+    ico.BackgroundTransparency = 1
+    ico.Font = Enum.Font.GothamBold
+    ico.Text = "⏰"
+    ico.TextSize = 16
+    ico.Parent = statusCard
+
+    local title = Instance.new("TextLabel")
+    title.Size = UDim2.new(1, -120, 0, 16)
+    title.Position = UDim2.new(0, 42, 0, 6)
+    title.BackgroundTransparency = 1
+    title.Font = Enum.Font.GothamBold
+    title.Text = "Auto Tembak Jam Ajaib"
+    title.TextColor3 = Color3.fromRGB(240, 240, 250)
+    title.TextSize = 11
+    title.TextXAlignment = Enum.TextXAlignment.Left
+    title.Parent = statusCard
+
+    local sub = Instance.new("TextLabel")
+    sub.Size = UDim2.new(1, -120, 0, 14)
+    sub.Position = UDim2.new(0, 42, 0, 24)
+    sub.BackgroundTransparency = 1
+    sub.Font = Enum.Font.Gotham
+    sub.Text = "Lv10: 0 | Lv9: 0 | Tembak: 0"
+    sub.TextColor3 = Color3.fromRGB(140, 145, 165)
+    sub.TextSize = 9.5
+    sub.TextXAlignment = Enum.TextXAlignment.Left
+    sub.Parent = statusCard
+
+    local badge = Instance.new("Frame")
+    badge.Size = UDim2.new(0, 68, 0, 22)
+    badge.Position = UDim2.new(1, -78, 0.5, -11)
+    badge.BackgroundColor3 = Color3.fromRGB(30, 33, 46)
+    badge.BorderSizePixel = 0
+    badge.Parent = statusCard
+    Instance.new("UICorner", badge).CornerRadius = UDim.new(0, 6)
+
+    local badgeText = Instance.new("TextLabel")
+    badgeText.Size = UDim2.new(1, 0, 1, 0)
+    badgeText.BackgroundTransparency = 1
+    badgeText.Font = Enum.Font.GothamBold
+    badgeText.Text = "● OFF"
+    badgeText.TextColor3 = Color3.fromRGB(160, 165, 185)
+    badgeText.TextSize = 9
+    badgeText.Parent = badge
+
+    -- Helper make toggle card
+    local function makeToggleCard(posY, labelTxt, defaultVal, onToggle)
+        local card = createModernCard(page, 30, posY)
+        local lbl = Instance.new("TextLabel")
+        lbl.Size = UDim2.new(1, -90, 1, 0)
+        lbl.Position = UDim2.new(0, 10, 0, 0)
+        lbl.BackgroundTransparency = 1
+        lbl.Font = Enum.Font.GothamBold
+        lbl.Text = labelTxt
+        lbl.TextColor3 = Color3.fromRGB(230, 230, 245)
+        lbl.TextSize = 8.5
+        lbl.TextXAlignment = Enum.TextXAlignment.Left
+        lbl.Parent = card
+
+        local btn = Instance.new("TextButton")
+        btn.Size = UDim2.new(0, 54, 0, 20)
+        btn.Position = UDim2.new(1, -64, 0.5, -10)
+        btn.BackgroundColor3 = defaultVal and Color3.fromRGB(16, 185, 129) or Color3.fromRGB(45, 48, 65)
+        btn.BorderSizePixel = 0
+        btn.Font = Enum.Font.GothamBold
+        btn.Text = defaultVal and "ON" or "OFF"
+        btn.TextColor3 = Color3.fromRGB(255, 255, 255)
+        btn.TextSize = 9
+        btn.AutoButtonColor = false
+        btn.Parent = card
+        Instance.new("UICorner", btn).CornerRadius = UDim.new(0, 5)
+
+        table.insert(Connections, btn.Activated:Connect(function()
+            local newVal = onToggle()
+            btn.Text = newVal and "ON" or "OFF"
+            btn.BackgroundColor3 = newVal and Color3.fromRGB(16, 185, 129) or Color3.fromRGB(45, 48, 65)
+        end))
+        return card, btn
+    end
+
+    makeToggleCard(48, "🎯 Target Kosan Level 10", Config.TargetLv10, function()
+        Config.TargetLv10 = not Config.TargetLv10
+        return Config.TargetLv10
+    end)
+
+    makeToggleCard(80, "🎯 Target Kosan Level 9", Config.TargetLv9, function()
+        Config.TargetLv9 = not Config.TargetLv9
+        return Config.TargetLv9
+    end)
+
+    makeToggleCard(112, "🏠 Hanya Kost Milik Sendiri", Config.OwnKosanOnly, function()
+        Config.OwnKosanOnly = not Config.OwnKosanOnly
+        return Config.OwnKosanOnly
+    end)
+
+    makeToggleCard(144, "🚀 Auto TP ke Depan Kosan", Config.AutoTP, function()
+        Config.AutoTP = not Config.AutoTP
+        return Config.AutoTP
+    end)
+
+    makeToggleCard(176, "👥 Tunggu Ada Penyewa (Lewati Kosong)", Config.WaitTenant, function()
+        Config.WaitTenant = not Config.WaitTenant
+        return Config.WaitTenant
+    end)
+
+    -- Card 7: Setting Delay (Delay Tembak & Delay TP Settle)
+    local delayCard = createModernCard(page, 54, 208)
+
+    -- Kolom Kiri: Delay Tembak
+    local dShootTitle = Instance.new("TextLabel")
+    dShootTitle.Size = UDim2.new(0.5, -16, 0, 12)
+    dShootTitle.Position = UDim2.new(0, 10, 0, 4)
+    dShootTitle.BackgroundTransparency = 1
+    dShootTitle.Font = Enum.Font.GothamBold
+    dShootTitle.Text = "⏱️ DELAY TEMBAK (DTK):"
+    dShootTitle.TextColor3 = Color3.fromRGB(99, 102, 241)
+    dShootTitle.TextSize = 8
+    dShootTitle.TextXAlignment = Enum.TextXAlignment.Left
+    dShootTitle.Parent = delayCard
+
+    local shootBox = Instance.new("Frame")
+    shootBox.Size = UDim2.new(0.5, -16, 0, 24)
+    shootBox.Position = UDim2.new(0, 10, 0, 20)
+    shootBox.BackgroundColor3 = Color3.fromRGB(15, 16, 24)
+    shootBox.BorderSizePixel = 0
+    shootBox.Parent = delayCard
+    Instance.new("UICorner", shootBox).CornerRadius = UDim.new(0, 5)
+    local sbStroke = Instance.new("UIStroke", shootBox)
+    sbStroke.Color = Color3.fromRGB(42, 46, 66)
+    sbStroke.Thickness = 1
+
+    local minusShootBtn = Instance.new("TextButton")
+    minusShootBtn.Size = UDim2.new(0, 20, 1, 0)
+    minusShootBtn.Position = UDim2.new(0, 0, 0, 0)
+    minusShootBtn.BackgroundColor3 = Color3.fromRGB(30, 33, 48)
+    minusShootBtn.BorderSizePixel = 0
+    minusShootBtn.Font = Enum.Font.GothamBold
+    minusShootBtn.Text = "−"
+    minusShootBtn.TextColor3 = Color3.fromRGB(200, 205, 230)
+    minusShootBtn.TextSize = 12
+    minusShootBtn.AutoButtonColor = false
+    minusShootBtn.Parent = shootBox
+    Instance.new("UICorner", minusShootBtn).CornerRadius = UDim.new(0, 4)
+
+    local plusShootBtn = Instance.new("TextButton")
+    plusShootBtn.Size = UDim2.new(0, 20, 1, 0)
+    plusShootBtn.Position = UDim2.new(1, -20, 0, 0)
+    plusShootBtn.BackgroundColor3 = Color3.fromRGB(30, 33, 48)
+    plusShootBtn.BorderSizePixel = 0
+    plusShootBtn.Font = Enum.Font.GothamBold
+    plusShootBtn.Text = "+"
+    plusShootBtn.TextColor3 = Color3.fromRGB(200, 205, 230)
+    plusShootBtn.TextSize = 12
+    plusShootBtn.AutoButtonColor = false
+    plusShootBtn.Parent = shootBox
+    Instance.new("UICorner", plusShootBtn).CornerRadius = UDim.new(0, 4)
+
+    local shootInput = Instance.new("TextBox")
+    shootInput.Size = UDim2.new(1, -44, 1, 0)
+    shootInput.Position = UDim2.new(0, 22, 0, 0)
+    shootInput.BackgroundTransparency = 1
+    shootInput.Font = Enum.Font.GothamBold
+    shootInput.Text = string.format("%.2f", Config.ShootDelay)
+    shootInput.TextColor3 = Color3.fromRGB(245, 245, 255)
+    shootInput.TextSize = 9
+    shootInput.ClearTextOnFocus = false
+    shootInput.Parent = shootBox
+
+    table.insert(Connections, minusShootBtn.Activated:Connect(function()
+        Config.ShootDelay = math.clamp(math.round((Config.ShootDelay - 0.05) * 100) / 100, 0.05, 10.0)
+        shootInput.Text = string.format("%.2f", Config.ShootDelay)
+    end))
+
+    table.insert(Connections, plusShootBtn.Activated:Connect(function()
+        Config.ShootDelay = math.clamp(math.round((Config.ShootDelay + 0.05) * 100) / 100, 0.05, 10.0)
+        shootInput.Text = string.format("%.2f", Config.ShootDelay)
+    end))
+
+    table.insert(Connections, shootInput.FocusLost:Connect(function()
+        local val = tonumber(shootInput.Text)
+        if val and val >= 0.05 then
+            Config.ShootDelay = math.clamp(val, 0.05, 60.0)
+        end
+        shootInput.Text = string.format("%.2f", Config.ShootDelay)
+    end))
+
+    -- Kolom Kanan: Delay TP Settle
+    local dTpTitle = Instance.new("TextLabel")
+    dTpTitle.Size = UDim2.new(0.5, -16, 0, 12)
+    dTpTitle.Position = UDim2.new(0.5, 6, 0, 4)
+    dTpTitle.BackgroundTransparency = 1
+    dTpTitle.Font = Enum.Font.GothamBold
+    dTpTitle.Text = "🚀 DELAY TP SETTLE (DTK):"
+    dTpTitle.TextColor3 = Color3.fromRGB(99, 102, 241)
+    dTpTitle.TextSize = 8
+    dTpTitle.TextXAlignment = Enum.TextXAlignment.Left
+    dTpTitle.Parent = delayCard
+
+    local tpBox = Instance.new("Frame")
+    tpBox.Size = UDim2.new(0.5, -16, 0, 24)
+    tpBox.Position = UDim2.new(0.5, 6, 0, 20)
+    tpBox.BackgroundColor3 = Color3.fromRGB(15, 16, 24)
+    tpBox.BorderSizePixel = 0
+    tpBox.Parent = delayCard
+    Instance.new("UICorner", tpBox).CornerRadius = UDim.new(0, 5)
+    local tbStroke = Instance.new("UIStroke", tpBox)
+    tbStroke.Color = Color3.fromRGB(42, 46, 66)
+    tbStroke.Thickness = 1
+
+    local minusTpBtn = Instance.new("TextButton")
+    minusTpBtn.Size = UDim2.new(0, 20, 1, 0)
+    minusTpBtn.Position = UDim2.new(0, 0, 0, 0)
+    minusTpBtn.BackgroundColor3 = Color3.fromRGB(30, 33, 48)
+    minusTpBtn.BorderSizePixel = 0
+    minusTpBtn.Font = Enum.Font.GothamBold
+    minusTpBtn.Text = "−"
+    minusTpBtn.TextColor3 = Color3.fromRGB(200, 205, 230)
+    minusTpBtn.TextSize = 12
+    minusTpBtn.AutoButtonColor = false
+    minusTpBtn.Parent = tpBox
+    Instance.new("UICorner", minusTpBtn).CornerRadius = UDim.new(0, 4)
+
+    local plusTpBtn = Instance.new("TextButton")
+    plusTpBtn.Size = UDim2.new(0, 20, 1, 0)
+    plusTpBtn.Position = UDim2.new(1, -20, 0, 0)
+    plusTpBtn.BackgroundColor3 = Color3.fromRGB(30, 33, 48)
+    plusTpBtn.BorderSizePixel = 0
+    plusTpBtn.Font = Enum.Font.GothamBold
+    plusTpBtn.Text = "+"
+    plusTpBtn.TextColor3 = Color3.fromRGB(200, 205, 230)
+    plusTpBtn.TextSize = 12
+    plusTpBtn.AutoButtonColor = false
+    plusTpBtn.Parent = tpBox
+    Instance.new("UICorner", plusTpBtn).CornerRadius = UDim.new(0, 4)
+
+    local tpInput = Instance.new("TextBox")
+    tpInput.Size = UDim2.new(1, -44, 1, 0)
+    tpInput.Position = UDim2.new(0, 22, 0, 0)
+    tpInput.BackgroundTransparency = 1
+    tpInput.Font = Enum.Font.GothamBold
+    tpInput.Text = string.format("%.2f", Config.TpSettleDelay)
+    tpInput.TextColor3 = Color3.fromRGB(245, 245, 255)
+    tpInput.TextSize = 9
+    tpInput.ClearTextOnFocus = false
+    tpInput.Parent = tpBox
+
+    table.insert(Connections, minusTpBtn.Activated:Connect(function()
+        Config.TpSettleDelay = math.clamp(math.round((Config.TpSettleDelay - 0.05) * 100) / 100, 0.02, 5.0)
+        tpInput.Text = string.format("%.2f", Config.TpSettleDelay)
+    end))
+
+    table.insert(Connections, plusTpBtn.Activated:Connect(function()
+        Config.TpSettleDelay = math.clamp(math.round((Config.TpSettleDelay + 0.05) * 100) / 100, 0.02, 5.0)
+        tpInput.Text = string.format("%.2f", Config.TpSettleDelay)
+    end))
+
+    table.insert(Connections, tpInput.FocusLost:Connect(function()
+        local val = tonumber(tpInput.Text)
+        if val and val >= 0.02 then
+            Config.TpSettleDelay = math.clamp(val, 0.02, 10.0)
+        end
+        tpInput.Text = string.format("%.2f", Config.TpSettleDelay)
+    end))
+
+    -- Card 8: Log Riwayat Terakhir
+    local resultCard = createModernCard(page, 40, 264)
+    local resTitle = Instance.new("TextLabel")
+    resTitle.Size = UDim2.new(1, -24, 0, 11)
+    resTitle.Position = UDim2.new(0, 10, 0, 2)
+    resTitle.BackgroundTransparency = 1
+    resTitle.Font = Enum.Font.GothamBold
+    resTitle.Text = "RIWAYAT TEMBAK TERAKHIR"
+    resTitle.TextColor3 = Color3.fromRGB(99, 102, 241)
+    resTitle.TextSize = 7.5
+    resTitle.TextXAlignment = Enum.TextXAlignment.Left
+    resTitle.Parent = resultCard
+
+    local resDesc = Instance.new("TextLabel")
+    resDesc.Size = UDim2.new(1, -24, 0, 22)
+    resDesc.Position = UDim2.new(0, 10, 0, 14)
+    resDesc.BackgroundTransparency = 1
+    resDesc.Font = Enum.Font.Gotham
+    resDesc.Text = "Belum ada tembakan. Tekan START untuk mulai."
+    resDesc.TextColor3 = Color3.fromRGB(160, 165, 185)
+    resDesc.TextSize = 7.5
+    resDesc.TextWrapped = true
+    resDesc.TextXAlignment = Enum.TextXAlignment.Left
+    resDesc.Parent = resultCard
+
+    local toggleBtn, toggleGrad = createHeroToggle(page, "ToggleJamBtn", "▶  START AUTO TEMBAK JAM AJAIB", -44)
+
+    local function repaint()
+        if State.Running then
+            toggleGrad.Color = ColorSequence.new({
+                ColorSequenceKeypoint.new(0, Color3.fromRGB(52, 211, 153)),
+                ColorSequenceKeypoint.new(1, Color3.fromRGB(16, 185, 129))
+            })
+            toggleBtn.Text = "■  STOP AUTO TEMBAK (RUNNING)"
+            badgeText.Text = "● ACTIVE"
+            badgeText.TextColor3 = Color3.fromRGB(52, 211, 153)
+            badge.BackgroundColor3 = Color3.fromRGB(20, 45, 35)
+        else
+            toggleGrad.Color = ColorSequence.new({
+                ColorSequenceKeypoint.new(0, Color3.fromRGB(244, 63, 94)),
+                ColorSequenceKeypoint.new(1, Color3.fromRGB(225, 29, 72))
+            })
+            toggleBtn.Text = "▶  START AUTO TEMBAK JAM AJAIB"
+            badgeText.Text = "● OFF"
+            badgeText.TextColor3 = Color3.fromRGB(160, 165, 185)
+            badge.BackgroundColor3 = Color3.fromRGB(30, 33, 46)
+        end
+    end
+
+    J.cb.update = function()
+        if State.WaitingTenant then
+            sub.Text = string.format("Lv10: %d | Lv9: %d | ⏳ Menunggu Penyewa...", State.DetectedLv10, State.DetectedLv9)
+        else
+            sub.Text = string.format("Lv10: %d | Lv9: %d | Tembak: %d", State.DetectedLv10, State.DetectedLv9, State.ShotCount)
+        end
+        resDesc.Text = string.format("Target: %s | Status: %s | Sukses: %d/%d", State.LastTarget, State.LastResult, State.SuccessCount, State.ShotCount)
+        repaint()
+    end
+
+    table.insert(Connections, toggleBtn.Activated:Connect(function()
+        State.Running = not State.Running
+        if State.Running then
+            J.startWorker()
+        else
+            J.stopWorker()
+        end
+        repaint()
+    end))
+
+    return page
+end)()
+
+-- ========================================================
 -- FOOTER BAR [JJK THEME]
 -- ========================================================
 local Footer = Instance.new("Frame")
@@ -5198,22 +6058,18 @@ FooterLabel.TextColor3 = Color3.fromRGB(180, 20, 40)
 FooterLabel.TextSize = 10
 FooterLabel.Parent = Footer
 
--- ========================================================
+-- -- ========================================================
 -- TAB SWITCHING ANIMATION
 -- ========================================================
-local TAB_ACTIVE_BG   = Color3.fromRGB(140, 15, 30)
-local TAB_INACTIVE_BG = Color3.fromRGB(12, 5, 18)
-local TAB_ACTIVE_TXT  = Color3.fromRGB(255, 230, 235)
-local TAB_INACTIVE_TXT = Color3.fromRGB(120, 80, 90)
-
 local TAB_MAP = {
     Plant = { page = PlantPage, btn = TabPlantBtn },
     Clean = { page = CleanPage, btn = TabCleanBtn },
     Tenant = { page = TenantPage, btn = TabTenantBtn },
     Afk   = { page = AfkPage,   btn = TabAfkBtn },
     Ternak = { page = TernakPage, btn = TabTernakBtn },
-    Blindbox = { page = BlindboxPage, btn = createTabPill("🎁 BLINDBOX") },
-    Detect = { page = DetectPage, btn = createTabPill("🛡️ DETECT") },
+    Blindbox = { page = BlindboxPage, btn = createTabPill("🎁  BLINDBOX") },
+    Detect   = { page = DetectPage,   btn = createTabPill("🛡️  DETECT") },
+    Jam      = { page = JamAjaibPage, btn = createTabPill("⏰  JAM AJAIB") },
 }
 
 local function switchTab(tab)
@@ -5237,6 +6093,7 @@ table.insert(Connections, TabAfkBtn.Activated:Connect(function() switchTab("Afk"
 table.insert(Connections, TabTernakBtn.Activated:Connect(function() switchTab("Ternak") end))
 table.insert(Connections, TAB_MAP.Blindbox.btn.Activated:Connect(function() switchTab("Blindbox") end))
 table.insert(Connections, TAB_MAP.Detect.btn.Activated:Connect(function() switchTab("Detect") end))
+table.insert(Connections, TAB_MAP.Jam.btn.Activated:Connect(function() switchTab("Jam") end))
 
 -- ========================================================
 -- LOGIC HANDLERS & ANIMATIONS
@@ -5504,6 +6361,7 @@ local function shutdown()
     pcall(stopAntiAfk)
     pcall(TernakHub.stopAll)
     pcall(BlindboxHub.stopAll)
+    pcall(JamAjaibHub.stopAll)
 
     for _, conn in ipairs(Connections) do
         if conn and conn.Disconnect then pcall(function() conn:Disconnect() end) end
