@@ -17,6 +17,401 @@ local LocalPlayer = Players.LocalPlayer
 local PlayerGui = LocalPlayer:WaitForChild("PlayerGui")
 
 -- ========================================================
+-- LOADING SCREEN (EFEK KEREN SAAT SCRIPT DI-EXECUTE)
+-- Loader.step(persen, teks) -> naikkan progress; Loader.finish() -> tutup & tampilkan GUI
+-- ========================================================
+local Loader = (function()
+    local RunService = game:GetService("RunService")
+    local Lighting = game:GetService("Lighting")
+    local genv = (typeof(getgenv) == "function" and getgenv()) or _G
+
+    -- Bersihkan loading lama bila script dijalankan ulang
+    if genv.__IndoKostLoader then
+        pcall(genv.__IndoKostLoader)
+        genv.__IndoKostLoader = nil
+    end
+
+    local L = { main = nil, progress = 0, target = 0, done = false, fading = false, destroyed = false }
+    local conn, blur
+
+    local RED    = Color3.fromRGB(220, 20, 50)
+    local GOLD   = Color3.fromRGB(255, 190, 70)
+    local PURPLE = Color3.fromRGB(150, 60, 255)
+
+    local gui = Instance.new("ScreenGui")
+    gui.Name = "IndoKostLoading"
+    gui.ResetOnSpawn = false
+    gui.IgnoreGuiInset = true
+    gui.DisplayOrder = 999
+    gui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
+
+    do
+        if syn and typeof(syn.protect_gui) == "function" then
+            pcall(syn.protect_gui, gui)
+        end
+        local mounted = false
+        if typeof(gethui) == "function" then
+            local okHui, hui = pcall(gethui)
+            if okHui and hui then
+                pcall(function() gui.Parent = hui end)
+                mounted = gui.Parent ~= nil
+            end
+        end
+        if not mounted and CoreGui then
+            pcall(function() gui.Parent = CoreGui end)
+            mounted = gui.Parent ~= nil
+        end
+        if not mounted then gui.Parent = PlayerGui end
+    end
+
+    local root = Instance.new("Frame")
+    root.Size = UDim2.fromScale(1, 1)
+    root.BackgroundTransparency = 1
+    root.Parent = gui
+
+    -- Layar gelap + blur latar
+    local overlay = Instance.new("Frame")
+    overlay.Size = UDim2.fromScale(1, 1)
+    overlay.BackgroundColor3 = Color3.fromRGB(4, 2, 8)
+    overlay.BackgroundTransparency = 1
+    overlay.BorderSizePixel = 0
+    overlay.Active = true -- cegah klik tembus ke game saat loading
+    overlay.Parent = root
+    TweenService:Create(overlay, TweenInfo.new(0.45), { BackgroundTransparency = 0.2 }):Play()
+
+    pcall(function()
+        blur = Instance.new("BlurEffect")
+        blur.Name = "IndoKostBlur"
+        blur.Size = 0
+        blur.Parent = Lighting
+        TweenService:Create(blur, TweenInfo.new(0.6), { Size = 16 }):Play()
+    end)
+
+    -- Ember / partikel melayang
+    local rng = Random.new()
+    local parts = {}
+    for i = 1, 18 do
+        local sz = rng:NextInteger(2, 6)
+        local f = Instance.new("Frame")
+        f.Size = UDim2.fromOffset(sz, sz)
+        f.BackgroundColor3 = (i % 3 == 0) and GOLD or ((i % 3 == 1) and RED or PURPLE)
+        f.BackgroundTransparency = 0.35 + rng:NextNumber() * 0.45
+        f.BorderSizePixel = 0
+        f.Parent = root
+        Instance.new("UICorner", f).CornerRadius = UDim.new(1, 0)
+        parts[i] = {
+            f = f, x = rng:NextNumber(), y = rng:NextNumber(),
+            spd = 0.03 + rng:NextNumber() * 0.08,
+            fr = 0.8 + rng:NextNumber() * 1.6, ph = rng:NextNumber() * 6.28,
+        }
+    end
+
+    -- Kartu loading
+    local card = Instance.new("Frame")
+    card.AnchorPoint = Vector2.new(0.5, 0.5)
+    card.Position = UDim2.fromScale(0.5, 0.5)
+    card.Size = UDim2.fromOffset(380, 220)
+    card.BackgroundTransparency = 1
+    card.Parent = root
+    local cardScale = Instance.new("UIScale", card)
+    cardScale.Scale = 0.8
+
+    local body = Instance.new("CanvasGroup")
+    body.Size = UDim2.fromScale(1, 1)
+    body.BackgroundColor3 = Color3.fromRGB(14, 6, 20)
+    body.BorderSizePixel = 0
+    body.GroupTransparency = 1
+    body.Parent = card
+    Instance.new("UICorner", body).CornerRadius = UDim.new(0, 18)
+    local bodyGrad = Instance.new("UIGradient", body)
+    bodyGrad.Rotation = 135
+    bodyGrad.Color = ColorSequence.new({
+        ColorSequenceKeypoint.new(0, Color3.fromRGB(255, 255, 255)),
+        ColorSequenceKeypoint.new(1, Color3.fromRGB(120, 100, 130)),
+    })
+
+    -- Border neon berputar
+    local border = Instance.new("Frame")
+    border.Size = UDim2.fromScale(1, 1)
+    border.BackgroundTransparency = 1
+    border.ZIndex = 5
+    border.Parent = card
+    Instance.new("UICorner", border).CornerRadius = UDim.new(0, 18)
+    local borderStroke = Instance.new("UIStroke", border)
+    borderStroke.Color = Color3.new(1, 1, 1)
+    borderStroke.Thickness = 2
+    local borderGrad = Instance.new("UIGradient", borderStroke)
+    borderGrad.Color = ColorSequence.new({
+        ColorSequenceKeypoint.new(0, RED),
+        ColorSequenceKeypoint.new(0.35, GOLD),
+        ColorSequenceKeypoint.new(0.65, PURPLE),
+        ColorSequenceKeypoint.new(1, RED),
+    })
+
+    -- Spinner (cincin + busur berputar)
+    local ring = Instance.new("Frame")
+    ring.Size = UDim2.fromOffset(56, 56)
+    ring.Position = UDim2.new(0.5, -28, 0, 22)
+    ring.BackgroundTransparency = 1
+    ring.Parent = body
+    Instance.new("UICorner", ring).CornerRadius = UDim.new(1, 0)
+    local ringStroke = Instance.new("UIStroke", ring)
+    ringStroke.Color = Color3.fromRGB(60, 18, 34)
+    ringStroke.Thickness = 3.5
+
+    local spin = Instance.new("Frame")
+    spin.Size = UDim2.fromOffset(56, 56)
+    spin.Position = UDim2.new(0.5, -28, 0, 22)
+    spin.BackgroundTransparency = 1
+    spin.Parent = body
+    Instance.new("UICorner", spin).CornerRadius = UDim.new(1, 0)
+    local spinStroke = Instance.new("UIStroke", spin)
+    spinStroke.Color = Color3.new(1, 1, 1)
+    spinStroke.Thickness = 3.5
+    local spinGrad = Instance.new("UIGradient", spinStroke)
+    spinGrad.Color = ColorSequence.new({
+        ColorSequenceKeypoint.new(0, GOLD),
+        ColorSequenceKeypoint.new(1, RED),
+    })
+    spinGrad.Transparency = NumberSequence.new({
+        NumberSequenceKeypoint.new(0, 0),
+        NumberSequenceKeypoint.new(0.4, 0.15),
+        NumberSequenceKeypoint.new(0.401, 1),
+        NumberSequenceKeypoint.new(1, 1),
+    })
+
+    local icon = Instance.new("TextLabel")
+    icon.Size = UDim2.fromOffset(56, 56)
+    icon.Position = UDim2.new(0.5, -28, 0, 22)
+    icon.BackgroundTransparency = 1
+    icon.Font = Enum.Font.GothamBold
+    icon.Text = "⚔"
+    icon.TextColor3 = Color3.fromRGB(255, 235, 235)
+    icon.TextSize = 24
+    icon.Parent = body
+
+    -- Judul
+    local title = Instance.new("TextLabel")
+    title.Size = UDim2.new(1, 0, 0, 30)
+    title.Position = UDim2.new(0, 0, 0, 88)
+    title.BackgroundTransparency = 1
+    title.Font = Enum.Font.GothamBlack
+    title.Text = "INDO-KOST HUB"
+    title.TextColor3 = Color3.new(1, 1, 1)
+    title.TextSize = 24
+    title.Parent = body
+    local titleGrad = Instance.new("UIGradient", title)
+    titleGrad.Color = ColorSequence.new({
+        ColorSequenceKeypoint.new(0, Color3.fromRGB(255, 110, 120)),
+        ColorSequenceKeypoint.new(0.5, Color3.fromRGB(255, 255, 255)),
+        ColorSequenceKeypoint.new(1, Color3.fromRGB(220, 180, 255)),
+    })
+
+    local sub = Instance.new("TextLabel")
+    sub.Size = UDim2.new(1, 0, 0, 14)
+    sub.Position = UDim2.new(0, 0, 0, 119)
+    sub.BackgroundTransparency = 1
+    sub.Font = Enum.Font.GothamBold
+    sub.Text = "VIP EDITION  •  SMITH GANTENG"
+    sub.TextColor3 = Color3.fromRGB(220, 160, 50)
+    sub.TextSize = 10
+    sub.Parent = body
+
+    -- Progress bar
+    local trackBar = Instance.new("Frame")
+    trackBar.Size = UDim2.fromOffset(300, 8)
+    trackBar.Position = UDim2.new(0.5, -150, 0, 152)
+    trackBar.BackgroundColor3 = Color3.fromRGB(26, 10, 32)
+    trackBar.BorderSizePixel = 0
+    trackBar.Parent = body
+    Instance.new("UICorner", trackBar).CornerRadius = UDim.new(1, 0)
+    local trackStroke = Instance.new("UIStroke", trackBar)
+    trackStroke.Color = Color3.fromRGB(90, 20, 38)
+    trackStroke.Thickness = 1
+
+    local fill = Instance.new("Frame")
+    fill.Size = UDim2.new(0, 0, 1, 0)
+    fill.BackgroundColor3 = Color3.new(1, 1, 1)
+    fill.BorderSizePixel = 0
+    fill.ClipsDescendants = true
+    fill.Parent = trackBar
+    Instance.new("UICorner", fill).CornerRadius = UDim.new(1, 0)
+    local fillGrad = Instance.new("UIGradient", fill)
+    fillGrad.Color = ColorSequence.new({
+        ColorSequenceKeypoint.new(0, RED),
+        ColorSequenceKeypoint.new(0.6, GOLD),
+        ColorSequenceKeypoint.new(1, Color3.fromRGB(255, 240, 200)),
+    })
+
+    local shimmer = Instance.new("Frame")
+    shimmer.Size = UDim2.new(0.45, 0, 1, 0)
+    shimmer.BackgroundColor3 = Color3.new(1, 1, 1)
+    shimmer.BorderSizePixel = 0
+    shimmer.Parent = fill
+    local shimmerGrad = Instance.new("UIGradient", shimmer)
+    shimmerGrad.Transparency = NumberSequence.new({
+        NumberSequenceKeypoint.new(0, 1),
+        NumberSequenceKeypoint.new(0.5, 0.4),
+        NumberSequenceKeypoint.new(1, 1),
+    })
+
+    local status = Instance.new("TextLabel")
+    status.Size = UDim2.fromOffset(230, 14)
+    status.Position = UDim2.new(0, 40, 0, 168)
+    status.BackgroundTransparency = 1
+    status.Font = Enum.Font.GothamBold
+    status.Text = "Memulai..."
+    status.TextColor3 = Color3.fromRGB(190, 140, 155)
+    status.TextSize = 10
+    status.TextXAlignment = Enum.TextXAlignment.Left
+    status.Parent = body
+
+    local pct = Instance.new("TextLabel")
+    pct.Size = UDim2.fromOffset(60, 14)
+    pct.Position = UDim2.new(1, -100, 0, 168)
+    pct.BackgroundTransparency = 1
+    pct.Font = Enum.Font.GothamBlack
+    pct.Text = "0%"
+    pct.TextColor3 = GOLD
+    pct.TextSize = 11
+    pct.TextXAlignment = Enum.TextXAlignment.Right
+    pct.Parent = body
+
+    local hint = Instance.new("TextLabel")
+    hint.Size = UDim2.new(1, 0, 0, 12)
+    hint.Position = UDim2.new(0, 0, 0, 196)
+    hint.BackgroundTransparency = 1
+    hint.Font = Enum.Font.Gotham
+    hint.Text = "Mohon tunggu sebentar, jangan tutup game"
+    hint.TextColor3 = Color3.fromRGB(110, 80, 100)
+    hint.TextSize = 8.5
+    hint.Parent = body
+
+    -- Animasi masuk
+    TweenService:Create(body, TweenInfo.new(0.5, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), { GroupTransparency = 0 }):Play()
+    TweenService:Create(cardScale, TweenInfo.new(0.6, Enum.EasingStyle.Back, Enum.EasingDirection.Out), { Scale = 1 }):Play()
+
+    -- Loop animasi
+    local t0 = os.clock()
+    conn = RunService.Heartbeat:Connect(function(dt)
+        if L.destroyed then return end
+        local t = os.clock() - t0
+
+        spinGrad.Rotation = (t * 320) % 360
+        borderGrad.Rotation = (t * 70) % 360
+        titleGrad.Offset = Vector2.new(math.sin(t * 1.8) * 0.7, 0)
+        shimmer.Position = UDim2.new((t * 0.9) % 1.8 - 0.6, 0, 0, 0)
+        icon.Rotation = math.sin(t * 2.2) * 8
+
+        local diff = L.target - L.progress
+        if diff > 0 then
+            local stepv = math.max(diff * math.min(1, dt * 3.2), math.min(diff, dt * 0.05))
+            L.progress = math.min(L.target, L.progress + stepv)
+        end
+        fill.Size = UDim2.new(L.progress, 0, 1, 0)
+        pct.Text = string.format("%d%%", math.floor(L.progress * 100 + 0.5))
+
+        for _, p in ipairs(parts) do
+            p.y -= p.spd * dt
+            if p.y < -0.05 then
+                p.y = 1.05
+                p.x = rng:NextNumber()
+            end
+            p.f.Position = UDim2.fromScale(p.x + math.sin(t * p.fr + p.ph) * 0.012, p.y)
+            if L.fading then
+                p.f.BackgroundTransparency = math.min(1, p.f.BackgroundTransparency + dt * 2)
+            end
+        end
+    end)
+
+    function L.set(pctTarget, text)
+        if L.destroyed then return end
+        if pctTarget and pctTarget > L.target then
+            L.target = math.min(pctTarget, 1)
+        end
+        if text and status.Text ~= text then
+            status.Text = text
+            status.TextTransparency = 1
+            TweenService:Create(status, TweenInfo.new(0.25), { TextTransparency = 0 }):Play()
+        end
+    end
+
+    -- Naikkan progress + beri jeda singkat supaya animasi sempat tampil
+    function L.step(pctTarget, text, hold)
+        L.set(pctTarget, text)
+        if L.destroyed then return end
+        task.wait(hold or 0.25)
+        local t = os.clock()
+        while not L.destroyed and L.progress < pctTarget - 0.04 and os.clock() - t < 1.2 do
+            task.wait()
+        end
+    end
+
+    function L.destroy()
+        if L.destroyed then return end
+        L.destroyed = true
+        if conn then conn:Disconnect() conn = nil end
+        pcall(function() if blur then blur:Destroy() end end)
+        pcall(function() gui:Destroy() end)
+        if L.main and not L.done then
+            pcall(function() L.main.Visible = true end)
+        end
+    end
+
+    function L.finish()
+        if L.destroyed or L.done then return end
+        L.done = true
+        L.set(1, "Siap! Selamat datang  👑")
+        local t = os.clock()
+        while not L.destroyed and L.progress < 0.995 and os.clock() - t < 2.5 do
+            task.wait()
+        end
+        if L.destroyed then return end
+        task.wait(0.4)
+        if L.destroyed then return end
+
+        L.fading = true
+        local fade = TweenInfo.new(0.55, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
+        TweenService:Create(body, fade, { GroupTransparency = 1 }):Play()
+        TweenService:Create(borderStroke, fade, { Transparency = 1 }):Play()
+        TweenService:Create(cardScale, TweenInfo.new(0.55, Enum.EasingStyle.Back, Enum.EasingDirection.In), { Scale = 1.15 }):Play()
+        TweenService:Create(overlay, TweenInfo.new(0.7), { BackgroundTransparency = 1 }):Play()
+        if blur then TweenService:Create(blur, TweenInfo.new(0.7), { Size = 0 }):Play() end
+
+        -- Munculkan jendela utama dengan efek pop-in
+        local m = L.main
+        if m then
+            local okIntro = pcall(function()
+                local sc = Instance.new("UIScale")
+                sc.Scale = 0.85
+                sc.Parent = m
+                local finalPos = m.Position
+                m.Position = finalPos + UDim2.fromOffset(0, 30)
+                m.Visible = true
+                TweenService:Create(sc, TweenInfo.new(0.6, Enum.EasingStyle.Back, Enum.EasingDirection.Out), { Scale = 1 }):Play()
+                TweenService:Create(m, TweenInfo.new(0.6, Enum.EasingStyle.Quart, Enum.EasingDirection.Out), { Position = finalPos }):Play()
+            end)
+            if not okIntro then m.Visible = true end
+        end
+
+        task.wait(0.75)
+        L.destroy()
+    end
+
+    -- Pengaman: jangan sampai loading menggantung bila ada error di tengah script
+    task.delay(30, function()
+        if not L.destroyed then
+            if L.main then pcall(function() L.main.Visible = true end) end
+            L.destroy()
+        end
+    end)
+
+    genv.__IndoKostLoader = L.destroy
+    return L
+end)()
+Loader.step(0.08, "Memulai IndoKost Hub...", 0.4)
+
+-- ========================================================
 -- CONFIGURATION & STATE
 -- ========================================================
 local isScriptRunning = true
@@ -272,6 +667,8 @@ print(string.format("[IndoKost] Executor: %s | fireproximityprompt: %s | firesig
     typeof(firesignal) == "function" and "ya" or "fallback",
     typeof(gethui) == "function" and "ya" or "CoreGui/PlayerGui"))
 
+Loader.step(0.18, "Menghubungkan remote game...")
+
 -- ========================================================
 -- NETWORK RESOLVERS
 -- ========================================================
@@ -334,6 +731,8 @@ local function findNearestDirt()
     end
     return nearest
 end
+
+Loader.step(0.32, "Remote terhubung ✔")
 
 -- ========================================================
 -- AUTO SAMPAH (BAGIAN DARI AUTO CLEAN): AMBIL + BUANG
@@ -725,6 +1124,8 @@ local function setCleanPhase(phase)
     onTrashUpdate()
 end
 
+Loader.step(0.44, "Menyiapkan Auto Plant & Clean...")
+
 -- ========================================================
 -- BACKGROUND WORKERS (DILENGKAPI JARAK JAUH)
 -- ========================================================
@@ -944,6 +1345,8 @@ local function stopCleaningLoop()
     TrashState.CleanPercent = nil
     onTrashUpdate()
 end
+
+Loader.step(0.56, "Menyiapkan Auto Penyewa & Spin...")
 
 -- ========================================================
 -- AUTO ACC PENYEWA
@@ -1166,6 +1569,8 @@ local function stopTenantWorker()
     end
 end
 
+Loader.step(0.64, "Mengaktifkan Anti-AFK...")
+
 -- ========================================================
 -- ANTI-AFK (CEGAH KICK IDLE 20 MENIT)
 -- ========================================================
@@ -1218,6 +1623,8 @@ local function stopAntiAfk()
         antiAfkThread = nil
     end
 end
+
+Loader.step(0.72, "Memasang Anti-Detect...")
 
 -- ========================================================
 -- ANTI-DETECT MODULE
@@ -2889,6 +3296,8 @@ local TernakHub = (function()
     }
 end)()
 
+Loader.step(0.82, "Memuat Ternak & Blindbox...")
+
 -- ========================================================
 -- AUTO GACHA BLINDBOX PAKAI UANG (SpinX10WithMoney + ClaimOneMultiReward)
 -- Satu putaran: reset -> spin x10 pakai uang -> buka 10 box satu per satu -> istirahat -> ulang.
@@ -3110,6 +3519,8 @@ local BlindboxHub = (function()
     }
 end)()
 
+Loader.step(0.9, "Memuat Auto Jam Ajaib...")
+
 -- ========================================================
 -- AUTO TEMBAK JAM AJAIB (KOSAN LEVEL 10 & LEVEL 9)
 -- Knit Remote: JamAjaibService.RF.Tembak
@@ -3125,6 +3536,7 @@ local JamAjaibHub = (function()
         Interval        = 1.0,    -- detik jeda antar siklus pengecekan
         ShootDelay      = 0.35,   -- detik jeda antar tembakan ke kosan berbeda
         TpSettleDelay   = 0.15,   -- detik jeda setelah teleport sebelum tembak
+        ThrowDelay      = 0.50,   -- detik jeda TEPAT sebelum lempar/tembak jam ajaib (setelah equip & TP)
         CooldownPerRoom = 5.0,    -- detik jeda sebelum kosan yang sama ditembak lagi
     }
 
@@ -3433,6 +3845,17 @@ local JamAjaibHub = (function()
             task.wait(tpDelay)
         end
 
+        -- Delay lempar: tunggu sebentar tepat sebelum jam ajaib dilempar
+        if Config.ThrowDelay and Config.ThrowDelay > 0 then
+            State.LastResult = string.format("Menunggu delay lempar (%.2fs)...", Config.ThrowDelay)
+            cb.update()
+            local throwWait = (typeof(AntiDetect) ~= "nil" and AntiDetect.cfg.Enabled)
+                and AntiDetect.jitterDelay(Config.ThrowDelay)
+                or Config.ThrowDelay
+            task.wait(throwWait)
+            if not isScriptRunning then return false end
+        end
+
         -- Menyiapkan payload multi-format
         local payloadTable = {
             KosanID = target.Id,
@@ -3575,6 +3998,8 @@ local JamAjaibHub = (function()
     }
 end)()
 
+Loader.step(0.95, "Membangun antarmuka...")
+
 -- ========================================================
 -- HIGH-END CYBER GUI DESIGN (SMITH GANTENG)
 -- ========================================================
@@ -3636,7 +4061,9 @@ MainFrame.BackgroundColor3 = Color3.fromRGB(8, 5, 12)
 MainFrame.BorderSizePixel = 0
 MainFrame.ClipsDescendants = true
 MainFrame.Active = true
+MainFrame.Visible = false -- ditampilkan oleh Loader.finish() dengan efek pop-in
 MainFrame.Parent = ScreenGui
+Loader.main = MainFrame
 
 local MainCorner = Instance.new("UICorner", MainFrame)
 MainCorner.CornerRadius = UDim.new(0, 16)
@@ -3831,6 +4258,68 @@ JJKBannerGrad.Color = ColorSequence.new({
     ColorSequenceKeypoint.new(1, Color3.fromRGB(80, 0, 15))
 })
 
+-- ========================================================
+-- ANIMASI GUI (border neon, shimmer judul, banner mengalir, ember melayang)
+-- ========================================================
+do
+    local RunService = game:GetService("RunService")
+    local rng = Random.new()
+
+    -- Border jendela: gradasi neon berputar
+    MainStroke.Color = Color3.new(1, 1, 1)
+    MainStroke.Thickness = 2
+    local strokeGrad = Instance.new("UIGradient", MainStroke)
+    strokeGrad.Color = ColorSequence.new({
+        ColorSequenceKeypoint.new(0, Color3.fromRGB(220, 20, 50)),
+        ColorSequenceKeypoint.new(0.35, Color3.fromRGB(255, 190, 70)),
+        ColorSequenceKeypoint.new(0.65, Color3.fromRGB(150, 60, 255)),
+        ColorSequenceKeypoint.new(1, Color3.fromRGB(220, 20, 50))
+    })
+
+    -- Ember kecil melayang di latar jendela
+    local embers = {}
+    for i = 1, 14 do
+        local sz = rng:NextInteger(2, 5)
+        local f = Instance.new("Frame")
+        f.Name = "Ember"
+        f.Size = UDim2.fromOffset(sz, sz)
+        f.BackgroundColor3 = (i % 3 == 0) and Color3.fromRGB(255, 200, 90) or Color3.fromRGB(255, 60, 90)
+        f.BackgroundTransparency = 0.5 + rng:NextNumber() * 0.4
+        f.BorderSizePixel = 0
+        f.ZIndex = 1
+        f.Parent = MainFrame
+        Instance.new("UICorner", f).CornerRadius = UDim.new(1, 0)
+        embers[i] = {
+            f = f, x = rng:NextNumber(), y = rng:NextNumber(),
+            spd = 0.02 + rng:NextNumber() * 0.05,
+            fr = 0.6 + rng:NextNumber() * 1.4, ph = rng:NextNumber() * 6.28,
+        }
+    end
+
+    local t0 = os.clock()
+    table.insert(Connections, RunService.Heartbeat:Connect(function(dt)
+        if not isScriptRunning or not MainFrame.Visible then return end
+        local t = os.clock() - t0
+
+        strokeGrad.Rotation = (t * 45) % 360
+        TitleGrad.Offset = Vector2.new(math.sin(t * 1.3) * 0.55, 0)
+        JJKBannerGrad.Offset = Vector2.new(math.sin(t * 0.9) * 0.3, 0)
+
+        local pulse = (math.sin(t * 2.4) + 1) / 2
+        HeaderStroke.Color = Color3.fromRGB(140, 15, 35):Lerp(Color3.fromRGB(235, 55, 85), pulse)
+        GojoFrameStroke.Color = Color3.fromRGB(200, 30, 60):Lerp(Color3.fromRGB(255, 190, 70), pulse)
+
+        for _, e in ipairs(embers) do
+            e.y -= e.spd * dt
+            if e.y < -0.05 then
+                e.y = 1.05
+                e.x = rng:NextNumber()
+            end
+            e.f.Position = UDim2.fromScale(e.x + math.sin(t * e.fr + e.ph) * 0.015, e.y)
+        end
+    end))
+end
+
 -- Bagian UI di bawah dibungkus satu fungsi agar variabelnya tidak menumpuk di fungsi utama
 -- (batas Lua/Luau: 200 variabel local per fungsi, dan sebagian executor menambah local sendiri).
 local _ = (function()
@@ -3891,6 +4380,26 @@ local function createTabPill(title)
     st.Color = Color3.fromRGB(55, 12, 24)
     st.Thickness = 1
 
+    -- Gradasi halus agar tombol terlihat bervolume
+    local pillGrad = Instance.new("UIGradient", btn)
+    pillGrad.Rotation = 0
+    pillGrad.Color = ColorSequence.new({
+        ColorSequenceKeypoint.new(0, Color3.fromRGB(255, 255, 255)),
+        ColorSequenceKeypoint.new(1, Color3.fromRGB(205, 175, 205))
+    })
+
+    -- Aksen emas di sisi kiri (muncul saat tab aktif)
+    local accent = Instance.new("Frame")
+    accent.Name = "Accent"
+    accent.AnchorPoint = Vector2.new(0, 0.5)
+    accent.Size = UDim2.new(0, 3, 0.55, 0)
+    accent.Position = UDim2.new(0, -6, 0.5, 0)
+    accent.BackgroundColor3 = Color3.fromRGB(255, 200, 90)
+    accent.BackgroundTransparency = 1
+    accent.BorderSizePixel = 0
+    accent.Parent = btn
+    Instance.new("UICorner", accent).CornerRadius = UDim.new(1, 0)
+
     btn.MouseEnter:Connect(function()
         if btn.BackgroundColor3 ~= TAB_ACTIVE_BG then
             TweenService:Create(btn, TWEEN_FAST, {
@@ -3931,13 +4440,21 @@ local function createModernCard(parent, height, posY)
     local card = Instance.new("Frame")
     card.Size = UDim2.new(1, 0, 0, height)
     card.Position = UDim2.new(0, 0, 0, posY)
-    card.BackgroundColor3 = Color3.fromRGB(14, 6, 18)
+    card.BackgroundColor3 = Color3.fromRGB(24, 10, 30)
     card.BorderSizePixel = 0
     card.Parent = parent
     Instance.new("UICorner", card).CornerRadius = UDim.new(0, 10)
     local stroke = Instance.new("UIStroke", card)
-    stroke.Color = Color3.fromRGB(100, 15, 30)
+    stroke.Color = Color3.fromRGB(120, 20, 40)
     stroke.Thickness = 1
+    stroke.Transparency = 0.15
+
+    local cardGrad = Instance.new("UIGradient", card)
+    cardGrad.Rotation = 90
+    cardGrad.Color = ColorSequence.new({
+        ColorSequenceKeypoint.new(0, Color3.fromRGB(255, 255, 255)),
+        ColorSequenceKeypoint.new(1, Color3.fromRGB(150, 125, 160))
+    })
     return card
 end
 
@@ -4590,6 +5107,28 @@ local function createHeroToggle(parent, name, text, posY)
         ColorSequenceKeypoint.new(0, Color3.fromRGB(244, 63, 94)),
         ColorSequenceKeypoint.new(1, Color3.fromRGB(225, 29, 72))
     })
+
+    -- Efek neon: garis tepi menyala saat hover, mengecil sedikit saat ditekan
+    local glow = Instance.new("UIStroke", btn)
+    glow.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
+    glow.Color = Color3.fromRGB(255, 190, 200)
+    glow.Thickness = 1.5
+    glow.Transparency = 0.6
+    local pressScale = Instance.new("UIScale", btn)
+
+    btn.MouseEnter:Connect(function()
+        TweenService:Create(glow, TWEEN_FAST, { Transparency = 0, Thickness = 2.4 }):Play()
+    end)
+    btn.MouseLeave:Connect(function()
+        TweenService:Create(glow, TWEEN_FAST, { Transparency = 0.6, Thickness = 1.5 }):Play()
+        TweenService:Create(pressScale, TWEEN_FAST, { Scale = 1 }):Play()
+    end)
+    btn.MouseButton1Down:Connect(function()
+        TweenService:Create(pressScale, TWEEN_FAST, { Scale = 0.965 }):Play()
+    end)
+    btn.MouseButton1Up:Connect(function()
+        TweenService:Create(pressScale, TWEEN_FAST, { Scale = 1 }):Play()
+    end)
     return btn, grad
 end
 
@@ -5808,19 +6347,19 @@ local JamAjaibPage = (function()
 
     -- Kolom Kiri: Delay Tembak
     local dShootTitle = Instance.new("TextLabel")
-    dShootTitle.Size = UDim2.new(0.5, -16, 0, 12)
-    dShootTitle.Position = UDim2.new(0, 10, 0, 4)
+    dShootTitle.Size = UDim2.new(1/3, -10, 0, 12)
+    dShootTitle.Position = UDim2.new(0, 8, 0, 4)
     dShootTitle.BackgroundTransparency = 1
     dShootTitle.Font = Enum.Font.GothamBold
-    dShootTitle.Text = "⏱️ DELAY TEMBAK (DTK):"
+    dShootTitle.Text = "⏱️ ANTAR TEMBAK (DTK)"
     dShootTitle.TextColor3 = Color3.fromRGB(99, 102, 241)
     dShootTitle.TextSize = 8
     dShootTitle.TextXAlignment = Enum.TextXAlignment.Left
     dShootTitle.Parent = delayCard
 
     local shootBox = Instance.new("Frame")
-    shootBox.Size = UDim2.new(0.5, -16, 0, 24)
-    shootBox.Position = UDim2.new(0, 10, 0, 20)
+    shootBox.Size = UDim2.new(1/3, -10, 0, 24)
+    shootBox.Position = UDim2.new(0, 8, 0, 20)
     shootBox.BackgroundColor3 = Color3.fromRGB(15, 16, 24)
     shootBox.BorderSizePixel = 0
     shootBox.Parent = delayCard
@@ -5886,19 +6425,19 @@ local JamAjaibPage = (function()
 
     -- Kolom Kanan: Delay TP Settle
     local dTpTitle = Instance.new("TextLabel")
-    dTpTitle.Size = UDim2.new(0.5, -16, 0, 12)
-    dTpTitle.Position = UDim2.new(0.5, 6, 0, 4)
+    dTpTitle.Size = UDim2.new(1/3, -10, 0, 12)
+    dTpTitle.Position = UDim2.new(1/3, 3, 0, 4)
     dTpTitle.BackgroundTransparency = 1
     dTpTitle.Font = Enum.Font.GothamBold
-    dTpTitle.Text = "🚀 DELAY TP SETTLE (DTK):"
+    dTpTitle.Text = "🚀 TP SETTLE (DTK)"
     dTpTitle.TextColor3 = Color3.fromRGB(99, 102, 241)
     dTpTitle.TextSize = 8
     dTpTitle.TextXAlignment = Enum.TextXAlignment.Left
     dTpTitle.Parent = delayCard
 
     local tpBox = Instance.new("Frame")
-    tpBox.Size = UDim2.new(0.5, -16, 0, 24)
-    tpBox.Position = UDim2.new(0.5, 6, 0, 20)
+    tpBox.Size = UDim2.new(1/3, -10, 0, 24)
+    tpBox.Position = UDim2.new(1/3, 3, 0, 20)
     tpBox.BackgroundColor3 = Color3.fromRGB(15, 16, 24)
     tpBox.BorderSizePixel = 0
     tpBox.Parent = delayCard
@@ -5960,6 +6499,84 @@ local JamAjaibPage = (function()
             Config.TpSettleDelay = math.clamp(val, 0.02, 10.0)
         end
         tpInput.Text = string.format("%.2f", Config.TpSettleDelay)
+    end))
+
+    -- Kolom Ketiga: Delay Lempar (sebelum jam ajaib dilempar)
+    local dThrowTitle = Instance.new("TextLabel")
+    dThrowTitle.Size = UDim2.new(1/3, -10, 0, 12)
+    dThrowTitle.Position = UDim2.new(2/3, -2, 0, 4)
+    dThrowTitle.BackgroundTransparency = 1
+    dThrowTitle.Font = Enum.Font.GothamBold
+    dThrowTitle.Text = "🎯 DELAY LEMPAR (DTK)"
+    dThrowTitle.TextColor3 = Color3.fromRGB(99, 102, 241)
+    dThrowTitle.TextSize = 8
+    dThrowTitle.TextXAlignment = Enum.TextXAlignment.Left
+    dThrowTitle.Parent = delayCard
+
+    local throwBox = Instance.new("Frame")
+    throwBox.Size = UDim2.new(1/3, -10, 0, 24)
+    throwBox.Position = UDim2.new(2/3, -2, 0, 20)
+    throwBox.BackgroundColor3 = Color3.fromRGB(15, 16, 24)
+    throwBox.BorderSizePixel = 0
+    throwBox.Parent = delayCard
+    Instance.new("UICorner", throwBox).CornerRadius = UDim.new(0, 5)
+    local thStroke = Instance.new("UIStroke", throwBox)
+    thStroke.Color = Color3.fromRGB(42, 46, 66)
+    thStroke.Thickness = 1
+
+    local minusThrowBtn = Instance.new("TextButton")
+    minusThrowBtn.Size = UDim2.new(0, 20, 1, 0)
+    minusThrowBtn.Position = UDim2.new(0, 0, 0, 0)
+    minusThrowBtn.BackgroundColor3 = Color3.fromRGB(30, 33, 48)
+    minusThrowBtn.BorderSizePixel = 0
+    minusThrowBtn.Font = Enum.Font.GothamBold
+    minusThrowBtn.Text = "−"
+    minusThrowBtn.TextColor3 = Color3.fromRGB(200, 205, 230)
+    minusThrowBtn.TextSize = 12
+    minusThrowBtn.AutoButtonColor = false
+    minusThrowBtn.Parent = throwBox
+    Instance.new("UICorner", minusThrowBtn).CornerRadius = UDim.new(0, 4)
+
+    local plusThrowBtn = Instance.new("TextButton")
+    plusThrowBtn.Size = UDim2.new(0, 20, 1, 0)
+    plusThrowBtn.Position = UDim2.new(1, -20, 0, 0)
+    plusThrowBtn.BackgroundColor3 = Color3.fromRGB(30, 33, 48)
+    plusThrowBtn.BorderSizePixel = 0
+    plusThrowBtn.Font = Enum.Font.GothamBold
+    plusThrowBtn.Text = "+"
+    plusThrowBtn.TextColor3 = Color3.fromRGB(200, 205, 230)
+    plusThrowBtn.TextSize = 12
+    plusThrowBtn.AutoButtonColor = false
+    plusThrowBtn.Parent = throwBox
+    Instance.new("UICorner", plusThrowBtn).CornerRadius = UDim.new(0, 4)
+
+    local throwInput = Instance.new("TextBox")
+    throwInput.Size = UDim2.new(1, -44, 1, 0)
+    throwInput.Position = UDim2.new(0, 22, 0, 0)
+    throwInput.BackgroundTransparency = 1
+    throwInput.Font = Enum.Font.GothamBold
+    throwInput.Text = string.format("%.2f", Config.ThrowDelay)
+    throwInput.TextColor3 = Color3.fromRGB(245, 245, 255)
+    throwInput.TextSize = 9
+    throwInput.ClearTextOnFocus = false
+    throwInput.Parent = throwBox
+
+    table.insert(Connections, minusThrowBtn.Activated:Connect(function()
+        Config.ThrowDelay = math.clamp(math.round((Config.ThrowDelay - 0.05) * 100) / 100, 0, 30.0)
+        throwInput.Text = string.format("%.2f", Config.ThrowDelay)
+    end))
+
+    table.insert(Connections, plusThrowBtn.Activated:Connect(function()
+        Config.ThrowDelay = math.clamp(math.round((Config.ThrowDelay + 0.05) * 100) / 100, 0, 30.0)
+        throwInput.Text = string.format("%.2f", Config.ThrowDelay)
+    end))
+
+    table.insert(Connections, throwInput.FocusLost:Connect(function()
+        local val = tonumber(throwInput.Text)
+        if val and val >= 0 then
+            Config.ThrowDelay = math.clamp(val, 0, 30.0)
+        end
+        throwInput.Text = string.format("%.2f", Config.ThrowDelay)
     end))
 
     -- Card 8: Log Riwayat Terakhir
@@ -6050,13 +6667,47 @@ FooterStroke.Color = Color3.fromRGB(100, 15, 25)
 FooterStroke.Thickness = 1
 
 local FooterLabel = Instance.new("TextLabel")
-FooterLabel.Size = UDim2.new(1, 0, 1, 0)
+FooterLabel.Size = UDim2.new(1, -120, 1, 0)
 FooterLabel.BackgroundTransparency = 1
 FooterLabel.Font = Enum.Font.GothamBold
 FooterLabel.Text = "⚔ 呪術廻戦  •  smith ganteng  •  呪術廻戦 ⚔"
 FooterLabel.TextColor3 = Color3.fromRGB(180, 20, 40)
 FooterLabel.TextSize = 10
 FooterLabel.Parent = Footer
+
+-- Indikator FPS & ping (live)
+local StatsLabel = Instance.new("TextLabel")
+StatsLabel.Name = "StatsLabel"
+StatsLabel.Size = UDim2.new(0, 112, 1, 0)
+StatsLabel.Position = UDim2.new(1, -118, 0, 0)
+StatsLabel.BackgroundTransparency = 1
+StatsLabel.Font = Enum.Font.GothamBold
+StatsLabel.Text = "● -- FPS  •  -- ms"
+StatsLabel.TextColor3 = Color3.fromRGB(220, 160, 50)
+StatsLabel.TextSize = 9
+StatsLabel.TextXAlignment = Enum.TextXAlignment.Right
+StatsLabel.Parent = Footer
+
+do
+    local RunService = game:GetService("RunService")
+    local frames, lastTick = 0, os.clock()
+    table.insert(Connections, RunService.Heartbeat:Connect(function()
+        frames += 1
+        local now = os.clock()
+        if now - lastTick < 0.5 then return end
+        local fps = math.floor(frames / (now - lastTick) + 0.5)
+        frames, lastTick = 0, now
+
+        local ping = "--"
+        pcall(function()
+            ping = tostring(math.floor(game:GetService("Stats").Network.ServerStatsItem["Data Ping"]:GetValue() + 0.5))
+        end)
+
+        local good = fps >= 45
+        StatsLabel.TextColor3 = good and Color3.fromRGB(110, 230, 160) or Color3.fromRGB(255, 190, 70)
+        StatsLabel.Text = string.format("● %d FPS  •  %s ms", fps, ping)
+    end))
+end
 
 -- -- ========================================================
 -- TAB SWITCHING ANIMATION
@@ -6075,11 +6726,23 @@ local TAB_MAP = {
 local function switchTab(tab)
     for name, entry in pairs(TAB_MAP) do
         local active = (name == tab)
+
+        -- Halaman yang baru aktif meluncur masuk dari kanan
+        if active and not entry.page.Visible then
+            entry.page.Position = UDim2.new(0, 18, 0, 0)
+            TweenService:Create(entry.page, TWEEN_SMOOTH, { Position = UDim2.new(0, 0, 0, 0) }):Play()
+        end
         entry.page.Visible = active
+
         TweenService:Create(entry.btn, TWEEN_SMOOTH, {
             BackgroundColor3 = active and TAB_ACTIVE_BG or TAB_INACTIVE_BG,
             TextColor3 = active and TAB_ACTIVE_TXT or TAB_INACTIVE_TXT
         }):Play()
+
+        local accent = entry.btn:FindFirstChild("Accent")
+        if accent then
+            TweenService:Create(accent, TWEEN_SMOOTH, { BackgroundTransparency = active and 0 or 1 }):Play()
+        end
     end
 end
 
@@ -6362,6 +7025,7 @@ local function shutdown()
     pcall(TernakHub.stopAll)
     pcall(BlindboxHub.stopAll)
     pcall(JamAjaibHub.stopAll)
+    pcall(Loader.destroy)
 
     for _, conn in ipairs(Connections) do
         if conn and conn.Disconnect then pcall(function() conn:Disconnect() end) end
@@ -6377,3 +7041,6 @@ do
     local genv = (typeof(getgenv) == "function" and getgenv()) or _G
     genv.__IndoKostShutdown = shutdown
 end
+
+-- Selesai memuat: tutup loading screen & tampilkan GUI
+task.spawn(Loader.finish)
