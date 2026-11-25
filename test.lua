@@ -1,4 +1,18 @@
-
+--[[
+    ╔═══════════════════════════════════════════════════════════════╗
+    ║                 ⚡ INDO-KOST ULTRA HUB v2.5 ⚡                 ║
+    ║                    👑 SMITH GANTENG 👑                        ║
+    ║       Modern Cyber Dark Edition - All-In-One Automation       ║
+    ║  - Auto Plant: Multi-Plot Selection + Auto TP ke Plot         ║
+    ║  - Auto Clean: Remote Signal + Auto Prompt + TP Jarak Jauh    ║
+    ║  - Anti-AFK: Cegah Kick Idle 20 Menit (Tombol Terpisah)       ║
+    ║  - Alur Clean: Bersih > Tunggu Sampah > Ambil > Buang         ║
+║  - Anti-Detect: Jitter TP + Random Delay + Rate Limit         ║
+    ║  - Kompatibel multi-executor (fallback otomatis)              ║
+    ║  - Auto Acc Penyewa + Spin Gratis saat 10 Penyewa (Terpisah)  ║
+    ║  - High-End Glassmorphism UI with UIGradient & Micro-Tweens   ║
+    ╚═══════════════════════════════════════════════════════════════╝
+--]]
 
 -- SERVICES
 local Players = game:GetService("Players")
@@ -90,7 +104,7 @@ local Loader = (function()
     -- Ember / partikel melayang
     local rng = Random.new()
     local parts = {}
-    for i = 1, 18 do
+    for i = 1, 8 do -- dikurangi dari 18 supaya startup lebih ringan di perangkat lemah
         local sz = rng:NextInteger(2, 6)
         local f = Instance.new("Frame")
         f.Size = UDim2.fromOffset(sz, sz)
@@ -4276,9 +4290,56 @@ do
         ColorSequenceKeypoint.new(1, Color3.fromRGB(220, 20, 50))
     })
 
-    -- Ember kecil melayang di latar jendela
+    -- MODE HEMAT: kalau true, efek dekoratif (ember, pulsa, border berputar) dimatikan
+    -- total supaya HP/perangkat lemah tidak ngeframe. Toggle-nya ada di GUI (tab Anti-Detect).
+    PerfState = PerfState or { SaveMode = false }
+    local decorTweens = {}
     local embers = {}
-    for i = 1, 14 do
+
+    -- Border jendela: diputar pakai Tween (dikerjakan engine), bukan Heartbeat manual
+    local strokeRotTween = TweenService:Create(
+        strokeGrad,
+        TweenInfo.new(8, Enum.EasingStyle.Linear, Enum.EasingDirection.In, -1, false),
+        { Rotation = 360 }
+    )
+    table.insert(decorTweens, strokeRotTween)
+
+    -- Judul & banner: goyangan halus lewat Tween yoyo, bukan dihitung tiap frame
+    TitleGrad.Offset = Vector2.new(-0.55, 0)
+    local titleTween = TweenService:Create(
+        TitleGrad,
+        TweenInfo.new(2.6, Enum.EasingStyle.Sine, Enum.EasingDirection.InOut, -1, true),
+        { Offset = Vector2.new(0.55, 0) }
+    )
+    table.insert(decorTweens, titleTween)
+
+    JJKBannerGrad.Offset = Vector2.new(-0.3, 0)
+    local bannerTween = TweenService:Create(
+        JJKBannerGrad,
+        TweenInfo.new(3.8, Enum.EasingStyle.Sine, Enum.EasingDirection.InOut, -1, true),
+        { Offset = Vector2.new(0.3, 0) }
+    )
+    table.insert(decorTweens, bannerTween)
+
+    -- Pulsa warna header/frame: Tween yoyo warna, menggantikan Lerp manual tiap frame
+    local headerPulse = TweenService:Create(
+        HeaderStroke,
+        TweenInfo.new(1.3, Enum.EasingStyle.Sine, Enum.EasingDirection.InOut, -1, true),
+        { Color = Color3.fromRGB(235, 55, 85) }
+    )
+    table.insert(decorTweens, headerPulse)
+
+    local gojoPulse = TweenService:Create(
+        GojoFrameStroke,
+        TweenInfo.new(1.3, Enum.EasingStyle.Sine, Enum.EasingDirection.InOut, -1, true),
+        { Color = Color3.fromRGB(255, 190, 70) }
+    )
+    table.insert(decorTweens, gojoPulse)
+
+    -- Ember: tiap partikel digerakkan Tween sendiri (naik lalu reset), bukan loop Heartbeat
+    -- Jumlahnya dikurangi dari 14 jadi 6 agar jumlah objek UI yang dirender lebih sedikit.
+    local EMBER_COUNT = 6
+    for i = 1, EMBER_COUNT do
         local sz = rng:NextInteger(2, 5)
         local f = Instance.new("Frame")
         f.Name = "Ember"
@@ -4289,35 +4350,36 @@ do
         f.ZIndex = 1
         f.Parent = MainFrame
         Instance.new("UICorner", f).CornerRadius = UDim.new(1, 0)
-        embers[i] = {
-            f = f, x = rng:NextNumber(), y = rng:NextNumber(),
-            spd = 0.02 + rng:NextNumber() * 0.05,
-            fr = 0.6 + rng:NextNumber() * 1.4, ph = rng:NextNumber() * 6.28,
-        }
+
+        local x = rng:NextNumber()
+        f.Position = UDim2.fromScale(x, 1.05)
+        local dur = 9 + rng:NextNumber() * 6
+        local tw = TweenService:Create(
+            f,
+            TweenInfo.new(dur, Enum.EasingStyle.Linear, Enum.EasingDirection.In, -1, false, rng:NextNumber() * dur),
+            { Position = UDim2.fromScale(x, -0.05) }
+        )
+        embers[i] = { f = f, tw = tw }
+        table.insert(decorTweens, tw)
     end
 
-    local t0 = os.clock()
-    table.insert(Connections, RunService.Heartbeat:Connect(function(dt)
-        if not isScriptRunning or not MainFrame.Visible then return end
-        local t = os.clock() - t0
+    -- Mainkan semua tween dekoratif sekaligus (skip total kalau Mode Hemat aktif)
+    local function playDecor()
+        if PerfState.SaveMode then return end
+        for _, tw in ipairs(decorTweens) do tw:Play() end
+    end
+    local function pauseDecor()
+        for _, tw in ipairs(decorTweens) do tw:Pause() end
+    end
 
-        strokeGrad.Rotation = (t * 45) % 360
-        TitleGrad.Offset = Vector2.new(math.sin(t * 1.3) * 0.55, 0)
-        JJKBannerGrad.Offset = Vector2.new(math.sin(t * 0.9) * 0.3, 0)
+    IndoKostDecor = { play = playDecor, pause = pauseDecor, embers = embers, tweens = decorTweens }
 
-        local pulse = (math.sin(t * 2.4) + 1) / 2
-        HeaderStroke.Color = Color3.fromRGB(140, 15, 35):Lerp(Color3.fromRGB(235, 55, 85), pulse)
-        GojoFrameStroke.Color = Color3.fromRGB(200, 30, 60):Lerp(Color3.fromRGB(255, 190, 70), pulse)
+    -- Jeda otomatis saat jendela disembunyikan, supaya tidak ada tween jalan percuma di latar
+    MainFrame:GetPropertyChangedSignal("Visible"):Connect(function()
+        if MainFrame.Visible then playDecor() else pauseDecor() end
+    end)
 
-        for _, e in ipairs(embers) do
-            e.y -= e.spd * dt
-            if e.y < -0.05 then
-                e.y = 1.05
-                e.x = rng:NextNumber()
-            end
-            e.f.Position = UDim2.fromScale(e.x + math.sin(t * e.fr + e.ph) * 0.015, e.y)
-        end
-    end))
+    playDecor()
 end
 
 -- Bagian UI di bawah dibungkus satu fungsi agar variabelnya tidak menumpuk di fungsi utama
@@ -6177,6 +6239,26 @@ local DetectPage = (function()
     infoDesc.TextWrapped = true
     infoDesc.TextXAlignment = Enum.TextXAlignment.Left
     infoDesc.Parent = infoCard
+
+    -- Mode Hemat: matikan total efek visual dekoratif (border berputar, ember, pulsa warna)
+    -- supaya HP/perangkat yang kurang kuat tidak ngeframe. Tidak memengaruhi fitur auto apa pun.
+    makeToggleCard(254, "⚡ Mode Hemat (Matikan Efek Visual)", PerfState.SaveMode, function()
+        PerfState.SaveMode = not PerfState.SaveMode
+        if IndoKostDecor then
+            if PerfState.SaveMode then
+                IndoKostDecor.pause()
+                for _, e in ipairs(IndoKostDecor.embers) do
+                    e.f.Visible = false
+                end
+            else
+                for _, e in ipairs(IndoKostDecor.embers) do
+                    e.f.Visible = true
+                end
+                IndoKostDecor.play()
+            end
+        end
+        return PerfState.SaveMode
+    end)
 
     local toggleBtn, toggleGrad = createHeroToggle(page, "ToggleDetectBtn", "■  ANTI-DETECT (AKTIF)", -44)
     toggleGrad.Color = ColorSequence.new({
