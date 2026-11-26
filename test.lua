@@ -1,5 +1,4 @@
 
-
 -- SERVICES
 local Players = game:GetService("Players")
 local Workspace = game:GetService("Workspace")
@@ -3950,11 +3949,23 @@ local JamAjaibHub = (function()
                         local key = t.Id or t.Model
                         local lastShot = State.RecentShots[key]
                         if not lastShot or (now - lastShot >= Config.CooldownPerRoom) then
+                            -- Tembak jam ajaib ke kosan ini. shootTarget() bersifat SEKUENSIAL:
+                            -- equip -> (opsional) TP -> delay lempar -> InvokeServer (menunggu
+                            -- balasan server) baru fungsi ini lanjut, jadi kosan berikutnya
+                            -- pasti menunggu kosan sebelumnya selesai ditembak lebih dulu.
                             shootTarget(t)
+
+                            -- Jeda tambahan SETELAH jam ajaib 1 selesai ditembak, sebelum
+                            -- lanjut menembak jam ajaib berikutnya.
                             local delayTime = (typeof(AntiDetect) ~= "nil" and AntiDetect.cfg.Enabled)
                                 and AntiDetect.jitterDelay(Config.ShootDelay)
                                 or Config.ShootDelay
-                            task.wait(delayTime)
+                            if delayTime and delayTime > 0 then
+                                State.LastResult = string.format("Jeda %.2fs sebelum kosan berikutnya...", delayTime)
+                                cb.update()
+                                task.wait(delayTime)
+                                if not State.Running or not isScriptRunning then break end
+                            end
                         end
                     end
                 end
@@ -6419,7 +6430,7 @@ local JamAjaibPage = (function()
     dShootTitle.Position = UDim2.new(0, 8, 0, 4)
     dShootTitle.BackgroundTransparency = 1
     dShootTitle.Font = Enum.Font.GothamBold
-    dShootTitle.Text = "⏱️ ANTAR TEMBAK (DTK)"
+    dShootTitle.Text = "⏱️ JEDA KE KOSAN BERIKUTNYA"
     dShootTitle.TextColor3 = Color3.fromRGB(99, 102, 241)
     dShootTitle.TextSize = 8
     dShootTitle.TextXAlignment = Enum.TextXAlignment.Left
